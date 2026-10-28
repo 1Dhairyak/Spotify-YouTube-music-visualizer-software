@@ -1,0 +1,7 @@
+# lyrics fetched at runtime (not ours to redistribute), per-user settings, logs
+cache/
+settings.json
+music-sync.log
+__pycache__/
+# reference clips
+*.mp4
