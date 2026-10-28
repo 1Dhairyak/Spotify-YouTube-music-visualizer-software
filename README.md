@@ -9,6 +9,8 @@ A lightweight Windows app that turns whatever you're playing on Spotify, YouTube
 
 ## Run
 
+Requirements: Windows 10/11 and Python 3.10+.
+
 ```bash
 pip install -r requirements.txt
 python app.py              # live
