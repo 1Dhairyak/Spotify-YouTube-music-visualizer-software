@@ -148,15 +148,19 @@ function updateTouch(T) {   // eased 0..1: how strongly the edge reacts to the m
 }
 function frameRect(T) {
   const i = 4, r = clamp(Math.min(W, H) * 0.03, 14, 36), pts = [], marks = [], PI = Math.PI;
-  const to = (x, y) => {   // straight run, in short steps so the ripple can bend it
-    const [px, py] = pts[pts.length - 1], n = Math.ceil(Math.hypot(x - px, y - py) / 24);
+  // Every step is under 1 mm (1.5 px), so neither the bent edge nor a corner ever shows a straight chord, even in
+  // slow motion. ponytail: ~3k points per frame; raise STEP if a slow GPU ever struggles
+  const STEP = 1.5;
+  const to = (x, y) => {   // straight run, in short steps so the ripple can bend it smoothly
+    const [px, py] = pts[pts.length - 1], n = Math.ceil(Math.hypot(x - px, y - py) / STEP);
     for (let k = 1; k <= n; k++) pts.push([px + (x - px) * k / n, py + (y - py) * k / n]);
   };
   const arc = (cx, cy, R, a0, a1, mark) => {
     to(cx + R * Math.cos(a0), cy + R * Math.sin(a0));
-    for (let k = 1; k <= 14; k++) {
-      const a = a0 + (a1 - a0) * k / 14;
-      if (mark && k === 7) marks.push(pts.length);   // flare point: halfway round this corner
+    const n = Math.max(2, Math.ceil(R * Math.abs(a1 - a0) / STEP));
+    for (let k = 1; k <= n; k++) {
+      const a = a0 + (a1 - a0) * k / n;
+      if (mark && k === n >> 1) marks.push(pts.length);   // flare point: halfway round this corner
       pts.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]);
     }
   };
@@ -283,13 +287,17 @@ function border(T) {
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 0.85 + 0.15 * Math.sin(T * 1.2);   // breathing
   edgeGlow(F, accentQ);
-  const pts = Array.from({ length: N + 1 }, (_, k) => along(F, head - len * (1 - k / N)));
-  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'butt';   // butt ends: round ones overlap into beads
+  // The tail: points every 1.5 px along the real path (so it hugs every corner), drawn as N fading bands
+  const M = Math.ceil(len / 1.5), pts = Array.from({ length: M + 1 }, (_, j) => along(F, head - len * (1 - j / M)));
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'butt'; ctx.lineJoin = 'round';   // butt ends: round ones overlap into beads
   for (const [lw, a, col] of [[30, 0.06, ACCENT], [16, 0.16, ACCENT], [7, 0.4, ACCENT], [2.4, 0.9, core]]) {   // the comet
     ctx.lineWidth = lw; ctx.strokeStyle = col;
     for (let k = 0; k < N; k++) {
+      const j0 = Math.round(k * M / N), j1 = Math.round((k + 1) * M / N);
       ctx.globalAlpha = a * Math.pow((k + 1) / N, 1.6);
-      ctx.beginPath(); ctx.moveTo(pts[k][0], pts[k][1]); ctx.lineTo(pts[k + 1][0], pts[k + 1][1]); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pts[j0][0], pts[j0][1]);
+      for (let j = j0 + 1; j <= j1; j++) ctx.lineTo(pts[j][0], pts[j][1]);
+      ctx.stroke();
     }
   }
   const glow = (x, y, rad, a) => { glowAt(x, y, rad, accentQ, a * 0.7); glowAt(x, y, rad * 0.4, core, a); };
@@ -305,7 +313,7 @@ function border(T) {
     for (const sgn of [1, -1]) { const [x, y] = along(F, rp.b + sgn * front); glow(x, y, 40, 0.5 * life * life); }
   }
   if (F.touchAt) glow(F.touchAt[0], F.touchAt[1], 120, 0.45 * touch);   // where the mouse touches the edge
-  const [hx, hy] = pts[N];
+  const [hx, hy] = pts[M];
   glowAt(hx, hy, 34, accentQ, 0.8); glowAt(hx, hy, 12, '#ffffff', 0.95);   // the head: a soft bright orb
   ctx.globalCompositeOperation = 'source-over';
   const d = F.dip;   // is the bright part of the light going round the notch? (the notch waits for it to pass)
