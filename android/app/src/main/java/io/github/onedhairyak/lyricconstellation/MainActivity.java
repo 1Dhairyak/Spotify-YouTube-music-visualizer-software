@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.DisplayCutout;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -16,6 +17,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 
 import androidx.webkit.WebViewAssetLoader;
 
@@ -24,6 +26,7 @@ public class MainActivity extends Activity {
     private static final String HOME = "https://appassets.androidplatform.net/assets/ui/index.html";
     private WebView web;
     private Media media;
+    volatile int cutoutTop;   // px the page was moved down to clear the camera (read by Media.topInset)
     private boolean asked;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -31,9 +34,6 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);   // lyrics shouldn't sleep mid-song
-        if (Build.VERSION.SDK_INT >= 28) {
-            getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-        }
         // https origin for the assets, so fonts load and LRCLIB / iTunes answer like they do for a web page
         WebViewAssetLoader assets = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
@@ -59,7 +59,24 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        setContentView(web);
+        // A punch-hole or notch camera: the page starts below it, the strip around the camera stays black.
+        // Done by hand with margins because apps for Android 15+ are always drawn edge to edge (into the cutout).
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF000000);
+        root.addView(web);
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            DisplayCutout c = Build.VERSION.SDK_INT >= 28 ? insets.getDisplayCutout() : null;
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) web.getLayoutParams();
+            int l = c == null ? 0 : c.getSafeInsetLeft(), t = c == null ? 0 : c.getSafeInsetTop();
+            int r = c == null ? 0 : c.getSafeInsetRight(), b = c == null ? 0 : c.getSafeInsetBottom();
+            cutoutTop = t;
+            if (lp.leftMargin != l || lp.topMargin != t || lp.rightMargin != r || lp.bottomMargin != b) {
+                lp.setMargins(l, t, r, b);
+                web.setLayoutParams(lp);
+            }
+            return insets;
+        });
+        setContentView(root);
         web.loadUrl(HOME);
     }
 

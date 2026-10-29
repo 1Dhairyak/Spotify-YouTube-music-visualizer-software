@@ -30,10 +30,11 @@ const LAP = 6;         // seconds per loop of the border light
 const TAIL = 0.3;      // tail length, as a share of the border
 
 let nodes = [], links = [], shown = -1;   // shown = index of the last word placed
-const big = () => clamp(innerWidth * 0.055, 44, 96);
+// Line-end words: big, but relative to the screen width (a phone gets ~37 px, not twice the desktop proportion)
+const big = () => clamp(innerWidth * (isPhone() ? 0.09 : 0.055), 32, 96);
 
 let style = 0, tris = [], shards = [], waveScroll = 0;   // style = index into STYLES (bottom of this file)
-function clearScene() { nodes = []; links = []; tris = []; shards = []; }
+function clearScene() { nodes = []; links = []; tris = []; shards = []; waveScroll = -W * 0.62; }   // wave restarts in place
 function reset() { clearScene(); shown = -1; }
 const center = () => ({ x: W / 2, y: TOP + (H - TOP) * 0.55 });
 
@@ -146,73 +147,92 @@ function updateTouch(T) {   // eased 0..1: how strongly the edge reacts to the m
   touch += (target - touch) * (1 - Math.exp(-dt * (target > touch ? 7 : 2.5)));   // quick to wake, slow to settle
   if (touch < 0.0005) touch = 0;
 }
-function frameRect(T) {
-  const i = 4, r = clamp(Math.min(W, H) * 0.03, 14, 36), pts = [], marks = [], PI = Math.PI;
-  // Every step is under 1 mm (1.5 px), so neither the bent edge nor a corner ever shows a straight chord, even in
-  // slow motion. ponytail: ~3k points per frame; raise STEP if a slow GPU ever struggles
-  const STEP = 1.5;
-  const to = (x, y) => {   // straight run, in short steps so the ripple can bend it smoothly
-    const [px, py] = pts[pts.length - 1], n = Math.ceil(Math.hypot(x - px, y - py) / STEP);
-    for (let k = 1; k <= n; k++) pts.push([px + (x - px) * k / n, py + (y - py) * k / n]);
+// The edge path as point arrays: point k is (x[k], y[k]), at distance L[k] along it. Built only when the screen
+// size or the notch shape changes, not every frame (a phone's garbage collector stutters on thousands of new
+// arrays a frame). Steps stay under 1 mm so no corner ever shows a straight chord, even in slow motion:
+// 1.5 px on a desktop screen, 2.5 px on a phone (its CSS pixels are smaller).
+let edge = null;
+function edgeBase() {
+  const nb = notchShape();
+  const key = `${W}x${H}|` + (nb ? [nb.x0, nb.x1, nb.y1, nb.rb].map(v => v.toFixed(1)).join(',') : '-');
+  if (edge && edge.key === key) return edge;
+  const i = 4, r = clamp(Math.min(W, H) * 0.03, 14, 36), xs = [i + r], ys = [i], marks = [], PI = Math.PI;
+  const STEP = isPhone() ? 2.5 : 1.5;
+  const to = (x, y) => {   // straight run, in short steps so a ripple can bend it smoothly
+    const px = xs[xs.length - 1], py = ys[ys.length - 1], n = Math.ceil(Math.hypot(x - px, y - py) / STEP);
+    for (let k = 1; k <= n; k++) { xs.push(px + (x - px) * k / n); ys.push(py + (y - py) * k / n); }
   };
   const arc = (cx, cy, R, a0, a1, mark) => {
     to(cx + R * Math.cos(a0), cy + R * Math.sin(a0));
     const n = Math.max(2, Math.ceil(R * Math.abs(a1 - a0) / STEP));
     for (let k = 1; k <= n; k++) {
       const a = a0 + (a1 - a0) * k / n;
-      if (mark && k === n >> 1) marks.push(pts.length);   // flare point: halfway round this corner
-      pts.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]);
+      if (mark && k === n >> 1) marks.push(xs.length);   // flare point: halfway round this corner
+      xs.push(cx + R * Math.cos(a)); ys.push(cy + R * Math.sin(a));
     }
   };
-  const nb = notchShape(), g = 4, f = 8;   // g: gap kept from the notch, f: the curve where the top edge turns down
+  const g = 4, f = 8;   // g: gap kept from the notch, f: the curve where the top edge turns down
   let dip = null;
-  pts.push([i + r, i]);
   if (nb && nb.y1 - nb.rb > i + f) {
     to(nb.x0 - g - f, i);
-    const k0 = pts.length - 1;
+    const k0 = xs.length - 1;
     arc(nb.x0 - g - f, i + f, f, -PI / 2, 0);
     arc(nb.x0 + nb.rb, nb.y1 - nb.rb, nb.rb + g, PI, PI / 2, true);
     arc(nb.x1 - nb.rb, nb.y1 - nb.rb, nb.rb + g, PI / 2, 0, true);
     arc(nb.x1 + g + f, i + f, f, PI, 1.5 * PI);
-    dip = { k0, k1: pts.length - 1, bs: nb.x0 - g - f - (i + r), be: nb.x1 + g + f - (i + r) };
+    dip = { k0, k1: xs.length - 1, bs: nb.x0 - g - f - (i + r), be: nb.x1 + g + f - (i + r) };
   }
   arc(W - i - r, i + r, r, -PI / 2, 0, true);
   arc(W - i - r, H - i - r, r, 0, PI / 2, true);
   arc(i + r, H - i - r, r, PI / 2, PI, true);
   arc(i + r, i + r, r, PI, 1.5 * PI, true);
-  const L = [0];
-  for (let k = 1; k < pts.length; k++) L.push(L[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
-  const F = { pts, L, P: L[L.length - 1], dip };
+  const n = xs.length, L = new Float64Array(n);
+  for (let k = 1; k < n; k++) L[k] = L[k - 1] + Math.hypot(xs[k] - xs[k - 1], ys[k] - ys[k - 1]);
+  edge = { key, n, x: Float64Array.from(xs), y: Float64Array.from(ys), L, P: L[n - 1], dip,
+           bx: new Float64Array(n), by: new Float64Array(n) };   // bx/by: the bent copy for ripples and touch
   if (dip) Object.assign(dip, { ds: L[dip.k0], de: L[dip.k1] });
-  F.Pb = F.P - (dip ? (dip.de - dip.ds) - (dip.be - dip.bs) : 0);   // the plain rectangle's length: the light's track
-  F.corners = marks.map(k => toBase(F, L[k]));
+  edge.Pb = edge.P - (dip ? (dip.de - dip.ds) - (dip.be - dip.bs) : 0);   // the plain rectangle's length: the light's track
+  edge.corners = marks.map(k => toBase(edge, L[k]));
+  return edge;
+}
+// This frame's edge: the cached path, bent by ripples and the touch when there are any.
+function frameRect(T) {
+  const E = edgeBase();
   for (let k = ripples.length - 1; k >= 0; k--) if (T - ripples[k].t > 1.2) ripples.splice(k, 1);
+  const bend = touch > 0.003 && mouse.x >= 0;
+  const F = { n: E.n, L: E.L, P: E.P, Pb: E.Pb, dip: E.dip, corners: E.corners, x: E.x, y: E.y, touchAt: null };
+  if (!ripples.length && !bend) return F;
+  const x = F.x = E.bx, y = F.y = E.by;
+  x.set(E.x); y.set(E.y);
   if (ripples.length) {   // waves running both ways along the edge from where the mouse swept past
     const cx = W / 2, cy = H / 2;
-    pts.forEach((q, k) => {
-      const bk = toBase(F, L[k]);
+    for (let k = 0; k < E.n; k++) {
+      const bk = toBase(E, E.L[k]);
       let push = 0;
       for (const rp of ripples) {
         const age = T - rp.t, front = 900 * age, life = 1 - age / 1.2;
-        const dd = Math.abs((((bk - rp.b) % F.Pb) + F.Pb * 1.5) % F.Pb - F.Pb / 2);   // distance along the edge
+        const dd = Math.abs((((bk - rp.b) % E.Pb) + E.Pb * 1.5) % E.Pb - E.Pb / 2);   // distance along the edge
         push += rp.amp * life * life * Math.exp(-(((dd - front) / 55) ** 2));
       }
-      if (push > 0.05) { const dx = cx - q[0], dy = cy - q[1], m = Math.hypot(dx, dy) || 1; q[0] += dx / m * push; q[1] += dy / m * push; }
-    });
+      if (push > 0.05) { const dx = cx - x[k], dy = cy - y[k], m = Math.hypot(dx, dy) || 1; x[k] += dx / m * push; y[k] += dy / m * push; }
+    }
   }
-  if (touch > 0.003 && mouse.x >= 0) {   // the bend: the edge near the mouse leans towards it and shivers
-    let best = 0, bd = Infinity;
-    pts.forEach(([x, y], k) => { const d = (x - mouse.x) ** 2 + (y - mouse.y) ** 2; if (d < bd) { bd = d; best = k; } });
-    const [cx, cy] = pts[best];
-    for (const q of pts) {
-      const d = Math.hypot(q[0] - cx, q[1] - cy), w = Math.exp(-((d / 150) ** 2));
+  if (bend) {   // the bend: the edge near the mouse leans towards it and shivers
+    const best = nearestEdgePoint(F, mouse.x, mouse.y), cx = x[best], cy = y[best];
+    for (let k = 0; k < E.n; k++) {
+      const d = Math.hypot(x[k] - cx, y[k] - cy), w = Math.exp(-((d / 150) ** 2));
       if (w < 0.01) continue;
-      const amp = touch * w * (4 + 3 * Math.sin(T * 14 - d / 22)), dx = mouse.x - q[0], dy = mouse.y - q[1], m = Math.hypot(dx, dy) || 1;
-      q[0] += dx / m * amp; q[1] += dy / m * amp;
+      const amp = touch * w * (4 + 3 * Math.sin(T * 14 - d / 22)), dx = mouse.x - x[k], dy = mouse.y - y[k], m = Math.hypot(dx, dy) || 1;
+      x[k] += dx / m * amp; y[k] += dy / m * amp;
     }
     F.touchAt = [cx, cy];
   }
   return F;
+}
+function nearestEdgePoint(F, px, py) {
+  let best = 0, bd = Infinity;
+  for (let k = 0; k < F.n; k++) { const d = (F.x[k] - px) ** 2 + (F.y[k] - py) ** 2; if (d < bd) { bd = d; best = k; } }
+  return best;
 }
 function toPath(F, b) {   // distance on the plain rectangle -> distance on the drawn path
   b = ((b % F.Pb) + F.Pb) % F.Pb;
@@ -227,29 +247,31 @@ function toBase(F, l) {
   if (l <= d.de) return d.bs + (l - d.ds) / ((d.de - d.ds) || 1) * (d.be - d.bs);
   return l - (d.de - d.ds) + (d.be - d.bs);
 }
-function along(F, b) {   // the point b px clockwise round the plain rectangle, drawn on the real path
+let AX = 0, AY = 0;   // alongXY's answer (no array allocated per call: the tail asks hundreds of times a frame)
+function alongXY(F, b) {   // the point b px clockwise round the plain rectangle, drawn on the real path
   const l = toPath(F, b);
-  let lo = 0, hi = F.L.length - 1;
+  let lo = 0, hi = F.n - 1;
   while (hi - lo > 1) { const m = (lo + hi) >> 1; if (F.L[m] <= l) lo = m; else hi = m; }
-  const [p, q] = [F.pts[lo], F.pts[hi]], u = (l - F.L[lo]) / ((F.L[hi] - F.L[lo]) || 1);
-  return [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u];
+  const u = (l - F.L[lo]) / ((F.L[hi] - F.L[lo]) || 1);
+  AX = F.x[lo] + (F.x[hi] - F.x[lo]) * u; AY = F.y[lo] + (F.y[hi] - F.y[lo]) * u;
 }
 // The soft wide glow all round. Stroking wide paths every frame was the single biggest GPU cost, so:
-// - the wide layers of the plain rectangle are painted once into an image and pasted;
+// - the wide layers of the plain rectangle are painted into an image (again only when the size or color changes);
 // - where the notch dips, that strip is cut out and the dip's glow is stamped with cheap glow sprites;
 // - only the thin bright line is stroked live, so the bend and ripples still move it.
-let edgeCache = null, edgeKey = '';
+let edgeCache = null, edgeSize = '', edgeColor = '';
 function edgeGlow(F, accentQ) {
-  const dpr = devicePixelRatio || 1, i = 4, r = clamp(Math.min(W, H) * 0.03, 14, 36), key = `${W}x${H}@${dpr}|${accentQ}`;
-  if (key !== edgeKey) {
+  const dpr = DPR(), i = 4, r = clamp(Math.min(W, H) * 0.03, 14, 36), size = `${W}x${H}@${dpr}`;
+  if (size !== edgeSize || accentQ !== edgeColor) {
     edgeCache = edgeCache || document.createElement('canvas');
-    edgeCache.width = Math.round(W * dpr); edgeCache.height = Math.round(H * dpr);
+    if (size !== edgeSize) { edgeCache.width = Math.round(W * dpr); edgeCache.height = Math.round(H * dpr); edgeSize = size; }
     const g = edgeCache.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, edgeCache.width, edgeCache.height);   // a color change: repaint, no new buffer
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.lineJoin = 'round'; g.strokeStyle = accentQ;
     for (const [lw, a] of [[24, 0.035], [13, 0.06], [6, 0.12]]) {
       g.globalAlpha = a; g.lineWidth = lw; g.beginPath(); g.roundRect(i, i, W - 2 * i, H - 2 * i, r); g.stroke();
     }
-    edgeKey = key;
+    edgeColor = accentQ;
   }
   const a0 = ctx.globalAlpha, d = F.dip;
   if (d) {   // paste everything except the strip under the notch, then stamp the dip's glow
@@ -257,21 +279,23 @@ function edgeGlow(F, accentQ) {
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(x0, 0, x1 - x0, i + 18); ctx.clip('evenodd');
     ctx.drawImage(edgeCache, 0, 0, W, H); ctx.restore();
     const n = Math.ceil((d.de - d.ds) / 5);
-    for (let k = 0; k <= n; k++) { const [x, y] = along(F, d.bs + (d.be - d.bs) * k / n); glowAt(x, y, 13, accentQ, a0 * 0.085); }
+    for (let k = 0; k <= n; k++) { alongXY(F, d.bs + (d.be - d.bs) * k / n); glowAt(AX, AY, 13, accentQ, a0 * 0.085); }
   } else ctx.drawImage(edgeCache, 0, 0, W, H);
   ctx.globalAlpha = a0 * 0.42; ctx.lineWidth = 1.8; ctx.lineJoin = 'round'; ctx.strokeStyle = ACCENT;   // the thin line, live
-  ctx.beginPath(); F.pts.forEach(([x, y], k) => ctx[k ? 'lineTo' : 'moveTo'](x, y)); ctx.closePath(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(F.x[0], F.y[0]);
+  for (let k = 1; k < F.n; k++) ctx.lineTo(F.x[k], F.y[k]);
+  ctx.closePath(); ctx.stroke();
   ctx.globalAlpha = a0;
 }
+let tailX = new Float64Array(0), tailY = new Float64Array(0);   // the comet's points, reused frame to frame
 function border(T) {
   updateTouch(T);
-  ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);   // screen-fixed: no parallax
-  const F = frameRect(T), len = TAIL * F.Pb, N = 24, base = F.Pb / LAP;
+  ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);   // screen-fixed: no parallax
+  const F = frameRect(T), len = TAIL * F.Pb, N = isPhone() ? 16 : 24, base = F.Pb / LAP;
   // where along the edge is the mouse? the light speeds up to reach it, then lingers there
   let want = base;
   if (mouse.inside && mouse.presence > 0.2 && now() - mouse.at < 2.5) {
-    let best = 0, bd = Infinity;
-    F.pts.forEach(([x, y], k) => { const d = (x - mouse.x) ** 2 + (y - mouse.y) ** 2; if (d < bd) { bd = d; best = k; } });
+    const best = nearestEdgePoint(F, mouse.x, mouse.y), bd = (F.x[best] - mouse.x) ** 2 + (F.y[best] - mouse.y) ** 2;
     const tb = toBase(F, F.L[best]), ahead = (((tb - headB) % F.Pb) + F.Pb) % F.Pb;
     want = base * (0.35 + 2.6 * clamp(ahead / (0.35 * F.Pb), 0, 1));
     if (mouse.speed > 700 && now() - rippleAt > 0.15 && bd < 280 * 280) {   // a fast sweep near the edge: a ripple
@@ -287,16 +311,18 @@ function border(T) {
   ctx.shadowBlur = 0;
   ctx.globalAlpha = 0.85 + 0.15 * Math.sin(T * 1.2);   // breathing
   edgeGlow(F, accentQ);
-  // The tail: points every 1.5 px along the real path (so it hugs every corner), drawn as N fading bands
-  const M = Math.ceil(len / 1.5), pts = Array.from({ length: M + 1 }, (_, j) => along(F, head - len * (1 - j / M)));
+  // The tail: points along the real path at the edge's step (so it hugs every corner), drawn as N fading bands
+  const M = Math.ceil(len / (isPhone() ? 2.5 : 1.5));
+  if (tailX.length < M + 1) { tailX = new Float64Array(M + 1); tailY = new Float64Array(M + 1); }
+  for (let j = 0; j <= M; j++) { alongXY(F, head - len * (1 - j / M)); tailX[j] = AX; tailY[j] = AY; }
   ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'butt'; ctx.lineJoin = 'round';   // butt ends: round ones overlap into beads
   for (const [lw, a, col] of [[30, 0.06, ACCENT], [16, 0.16, ACCENT], [7, 0.4, ACCENT], [2.4, 0.9, core]]) {   // the comet
     ctx.lineWidth = lw; ctx.strokeStyle = col;
     for (let k = 0; k < N; k++) {
       const j0 = Math.round(k * M / N), j1 = Math.round((k + 1) * M / N);
       ctx.globalAlpha = a * Math.pow((k + 1) / N, 1.6);
-      ctx.beginPath(); ctx.moveTo(pts[j0][0], pts[j0][1]);
-      for (let j = j0 + 1; j <= j1; j++) ctx.lineTo(pts[j][0], pts[j][1]);
+      ctx.beginPath(); ctx.moveTo(tailX[j0], tailY[j0]);
+      for (let j = j0 + 1; j <= j1; j++) ctx.lineTo(tailX[j], tailY[j]);
       ctx.stroke();
     }
   }
@@ -304,21 +330,24 @@ function border(T) {
   for (const c of F.corners) {   // a corner flares as the light rounds it, then fades
     const since = ((((head - c) % F.Pb) + F.Pb) % F.Pb) / base;
     if (since < 1.1) {
-      const e = 1 - since / 1.1, [x, y] = along(F, c);
-      glow(x, y, 50 + 90 * (1 - e * 0.5), 0.55 * e * e);
+      const e = 1 - since / 1.1;
+      alongXY(F, c); glow(AX, AY, 50 + 90 * (1 - e * 0.5), 0.55 * e * e);
     }
   }
   for (const rp of ripples) {   // each ripple's two wave fronts glow as they travel
     const age = T - rp.t, life = 1 - age / 1.2, front = 900 * age;
-    for (const sgn of [1, -1]) { const [x, y] = along(F, rp.b + sgn * front); glow(x, y, 40, 0.5 * life * life); }
+    for (const sgn of [1, -1]) { alongXY(F, rp.b + sgn * front); glow(AX, AY, 40, 0.5 * life * life); }
   }
   if (F.touchAt) glow(F.touchAt[0], F.touchAt[1], 120, 0.45 * touch);   // where the mouse touches the edge
-  const [hx, hy] = pts[M];
+  const hx = tailX[M], hy = tailY[M];
   glowAt(hx, hy, 34, accentQ, 0.8); glowAt(hx, hy, 12, '#ffffff', 0.95);   // the head: a soft bright orb
   ctx.globalCompositeOperation = 'source-over';
   const d = F.dip;   // is the bright part of the light going round the notch? (the notch waits for it to pass)
-  cometNearNotch = !!d && Array.from({ length: 12 }, (_, k) => (((head - len * 0.5 * k / 11) % F.Pb) + F.Pb) % F.Pb)
-    .some(b => b > d.bs - 40 && b < d.be + 40);
+  cometNearNotch = false;
+  if (d) for (let k = 0; k < 12 && !cometNearNotch; k++) {
+    const b = (((head - len * 0.5 * k / 11) % F.Pb) + F.Pb) % F.Pb;
+    cometNearNotch = b > d.bs - 40 && b < d.be + 40;
+  }
 }
 
 const haloColor = () => `rgb(${shownRGB.map(v => Math.round(v / 12) * 12).join(',')})`;
@@ -372,15 +401,19 @@ function draw(T) {
 
     // Label above the star.
     const grow = 0.85 + 0.15 * easeOut((T - n.born) / 0.25);
-    const size = (big() + (SMALL - big()) * s) * (n.end ? grow : 1);
+    let size = (big() + (SMALL - big()) * s) * (n.end ? grow : 1);
     const font = px => `${s < 0.5 ? 600 : 500} ${px}px "Segoe UI Variable Display", "Segoe UI", sans-serif`;
     ctx.font = font(size);
     ctx.letterSpacing = s < 0.5 ? '-0.01em' : '0px';
-    const half = ctx.measureText(n.w).width / 2, lx = clamp(p.x, half + 24, W - half - 24), ly = p.y - r - 6;
+    let half = ctx.measureText(n.w).width / 2;
+    if (2 * half > W - 48) { size *= (W - 48) / (2 * half); ctx.font = font(size); half = (W - 48) / 2; }   // too long: shrink to fit
+    const lx = clamp(p.x, half + 24, W - half - 24);
+    const ly = Math.max(p.y - r - 6, TOP - 16 + size);   // above its star, but never up under the song title
+    const inside = clamp((Math.min(p.x, W - p.x) + 20) / 40, 0, 1);   // a star scrolled past a side: its label fades out
     ctx.save();
     if (p.s) { ctx.translate(lx, ly); ctx.scale(p.s, p.s); ctx.translate(-lx, -ly); }   // the lens
-    if (s < 0.5) drawHalo(n.w, font, size, haloColor(), 18, lx, ly, 'center', 'bottom', a * (1 - 2 * s));
-    ctx.globalAlpha = a * (1 - (isCur ? 0.1 : 0.4) * s);
+    if (s < 0.5) drawHalo(n.w, font, size, haloColor(), 18, lx, ly, 'center', 'bottom', a * inside * (1 - 2 * s));
+    ctx.globalAlpha = a * inside * (1 - (isCur ? 0.1 : 0.4) * s);
     ctx.fillText(n.w, lx, ly);
     ctx.restore();
   });
@@ -452,8 +485,11 @@ function prismUnder(T, alpha, P) {
 
 // Orbit: words ride 3 slowly turning rings; spokes to the center make triangles between rings.
 const RINGS = [0.17, 0.29, 0.41], SPIN = [0.06, -0.04, 0.025];
+// Ring radius: from the height, but never wider than the screen (the rings are 1.8x wider than tall, which on a
+// portrait phone would put the outer rings far past both sides)
+const orbitR = ring => Math.min(H - TOP, (W / 2 - 24) / (1.8 * RINGS[2])) * RINGS[ring];
 function orbitXY(ring, ang) {
-  const c = center(), r = (H - TOP) * RINGS[ring];
+  const c = center(), r = orbitR(ring);
   return { x: c.x + Math.cos(ang) * r * 1.8, y: c.y + Math.sin(ang) * r };
 }
 function orbitPlace(scene) {
@@ -470,8 +506,8 @@ function orbitPos(n, T) { return orbitXY(n.ring, n.ang + T * SPIN[n.ring]); }
 function orbitUnder(T, alpha, P) {
   const c = center();
   ctx.globalAlpha = 0.08 * sceneFade;
-  for (const k of RINGS) {
-    const r = (H - TOP) * k;
+  for (let k = 0; k < RINGS.length; k++) {
+    const r = orbitR(k);
     ctx.beginPath(); ctx.ellipse(c.x, c.y, r * 1.8, r, 0, 0, 6.29); ctx.stroke();
   }
   for (const n of nodes) { ctx.globalAlpha = 0.12 * alpha(n); line(c, P(n)); }

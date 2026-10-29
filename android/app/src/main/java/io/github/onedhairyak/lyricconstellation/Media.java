@@ -63,7 +63,8 @@ public class Media {
             int id = a.getResources().getIdentifier("status_bar_height", "dimen", "android");
             if (id > 0) px = a.getResources().getDimensionPixelSize(id);
         }
-        return px / a.getResources().getDisplayMetrics().density;
+        if (a instanceof MainActivity) px -= ((MainActivity) a).cutoutTop;   // the page already starts below the camera
+        return Math.max(0, px) / a.getResources().getDisplayMetrics().density;
     }
 
     /** Asks for the microphone; once Android stops showing the prompt (denied before), opens the app's settings. */
@@ -152,11 +153,19 @@ public class Media {
         return Math.sqrt(sum / pcm.length);
     }
 
-    /** Play/pause whatever app is playing, like the headset button: needs no permission. */
+    /** Play/pause, next and previous for whatever app is playing, like headset buttons: needs no permission. */
     @JavascriptInterface
-    public void playPause() {
+    public void playPause() { key(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE); }
+
+    @JavascriptInterface
+    public void next() { key(KeyEvent.KEYCODE_MEDIA_NEXT); }
+
+    @JavascriptInterface
+    public void previous() { key(KeyEvent.KEYCODE_MEDIA_PREVIOUS); }
+
+    private void key(int code) {
         AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
-        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
-        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
+        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+        am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
     }
 }

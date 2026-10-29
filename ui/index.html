@@ -98,6 +98,20 @@
   .dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; transition: transform .2s, box-shadow .25s; }
   .dot:hover { transform: scale(1.15); }
   .dot.on { box-shadow: 0 0 0 2px #000, 0 0 0 4px #fff; }
+  /* Previous / play-pause / next, for whatever is playing (Spotify, YouTube Music...) */
+  #media { gap: 14px; }
+  .mbtn { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #1c1c1c;
+    transition: background .2s, transform .15s; }
+  .mbtn:hover { background: #2c2c2c; }
+  .mbtn:active { transform: scale(.9); }
+  .mbtn svg { width: 18px; height: 18px; fill: #fff; }
+  .mbtn.play { width: 46px; height: 46px; background: #fff; }
+  .mbtn.play svg { width: 22px; height: 22px; fill: #000; }
+  .mbtn.play:hover { background: #e6e6e6; }
+  #media .i-pause, #media.playing .i-play { display: none; }
+  #media.playing .i-pause { display: block; }
+  .phone .mbtn { width: 46px; height: 46px; }   /* finger-sized on phones */
+  .phone .mbtn.play { width: 56px; height: 56px; }
 
   /* The cursor: a soft glow in the look's color instead of the arrow; fades after 2 s still */
   html, body, * { cursor: none !important; }
@@ -114,7 +128,14 @@
 <div id="cover"><img alt=""><div class="t"></div><div class="a"></div></div>
 <div id="status"></div>
 <div id="toast"></div>
-<div id="notch"><div class="in"><div class="row" id="looks"></div><div class="row" id="colors"></div></div></div>
+<div id="notch"><div class="in">
+  <div class="row" id="media">
+    <div class="mbtn" data-m="prev" title="Previous"><svg viewBox="0 0 24 24"><path d="M6 5h2.4v14H6zM19 5v14L9.2 12z"/></svg></div>
+    <div class="mbtn play" data-m="play" title="Play / pause"><svg class="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg><svg class="i-pause" viewBox="0 0 24 24"><path d="M6.5 5h4v14h-4zM13.5 5h4v14h-4z"/></svg></div>
+    <div class="mbtn" data-m="next" title="Next"><svg viewBox="0 0 24 24"><path d="M15.6 5H18v14h-2.4zM5 5l9.8 7L5 19z"/></svg></div>
+  </div>
+  <div class="row" id="looks"></div><div class="row" id="colors"></div>
+</div></div>
 <div id="cursor"></div>
 <script>
 // ---------- shared by every look ----------
@@ -129,8 +150,11 @@ let sceneFade = 1;     // lyrics opacity; 0 on the cover screen
 const $ = s => document.querySelector(s);
 const cv = $('canvas'), ctx = cv.getContext('2d');
 let W, H;
+// Pixels per CSS px for the canvas. Phones are capped at 1.75: their screens are so dense that the full ratio
+// (often 2.6-3.5) costs 2-4x the drawing work for detail the eye can't see at arm's length.
+const DPR = () => isPhone() ? Math.min(devicePixelRatio || 1, 1.75) : (devicePixelRatio || 1);
 function resize() {
-  const d = devicePixelRatio || 1;
+  const d = DPR();
   W = innerWidth; H = innerHeight; cv.width = Math.round(W * d); cv.height = Math.round(H * d);
   ctx.setTransform(d, 0, 0, d, 0, 0);
   LOOKS.forEach(l => l.resize && l.resize());
@@ -161,7 +185,8 @@ const ease = k60 => 1 - Math.pow(1 - k60, dt * 60);
 // ---------- glow sprites: a soft round glow drawn once and pasted (shadowBlur is a GPU blur pass per draw) ----------
 const sprites = new Map();
 function glowSprite(color, r) {
-  r = Math.max(4, Math.round(r / 4) * 4);
+  // a few sizes per color (4 per octave), drawn scaled to the exact radius: flares that grow every frame reuse them
+  r = r <= 16 ? Math.max(4, Math.ceil(r / 4) * 4) : Math.round(2 ** (Math.ceil(Math.log2(r) * 4) / 4));
   const k = color + r;
   let c = sprites.get(k);
   if (!c) {
@@ -206,7 +231,7 @@ function drawHalo(s, font, px, color, blur, x, y, align, baseline, a) {   // fon
 // rendered once (at the screen's pixel density, times res for text that gets zoomed) and pasted from then on.
 const textImgs = new Map();
 function textImage(s, font, style, res = 1) {   // style: { fill?, stroke?, lw?, stretch? }
-  const d = (devicePixelRatio || 1) * res, k = [s, font, style.fill, style.stroke, style.lw, style.stretch, d].join('|');
+  const d = DPR() * res, k = [s, font, style.fill, style.stroke, style.lw, style.stretch, d].join('|');
   let c = textImgs.get(k);
   if (!c) {
     if (textImgs.size > 400) textImgs.clear();
@@ -261,7 +286,7 @@ function stepMouse() {
 const NO_WARP = { dx: 0, dy: 0, s: 1, f: 0 };
 function field(x, y, k = 1) {
   if (mouse.presence < 0.01) return NO_WARP;
-  const m = ctx.getTransform(), d = devicePixelRatio || 1;
+  const m = ctx.getTransform(), d = DPR();
   const sx = (m.a * x + m.c * y + m.e) / d, sy = (m.b * x + m.d * y + m.f) / d;
   const ex = sx - mouse.sx, ey = sy - mouse.sy, r = Math.hypot(ex, ey), R = 170;
   if (r > R * 2) return NO_WARP;
@@ -387,8 +412,11 @@ function direct(lk, T) {
 let look = -1, lookSaved = null;
 const ghost = document.createElement('canvas');   // last frame of the old look/style, faded out over the new one
 let ghostAt = -9;
-function snapshot() {
-  ghost.width = cv.width; ghost.height = cv.height; ghost.getContext('2d').drawImage(cv, 0, 0); ghostAt = now();
+function snapshot() {   // reuses the canvas: resizing it reallocates a full-screen buffer
+  const g = ghost.getContext('2d');
+  if (ghost.width !== cv.width || ghost.height !== cv.height) { ghost.width = cv.width; ghost.height = cv.height; }
+  else g.clearRect(0, 0, ghost.width, ghost.height);
+  g.drawImage(cv, 0, 0); ghostAt = now();
 }
 let lookWant = 0;   // the look asked for (song turn, notch, N key); a phone shows Constellation whatever it is
 const isPhone = () => window.MOBILE_APP || innerWidth < 700;   // MOBILE_APP: set by the Android app's android.js
@@ -418,8 +446,8 @@ function frame(ts) {
   dt *= rate; sceneT += dt;
   const T = sceneT;
   if (lk.pre) lk.pre(T);                                       // may snapshot this frame for a crossfade
-  if (cv.width !== Math.round(innerWidth * (devicePixelRatio || 1))) resize();   // moved to a screen with other scaling
-  ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
+  if (cv.width !== Math.round(innerWidth * DPR())) resize();   // moved to a screen with other scaling
+  ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.shadowBlur = 0;
   ctx.clearRect(0, 0, W, H);
   const topWant = view === 'both' ? Math.max(150, headerH - 16) : 40;   // below a 2-line title too (header has 32px padding)
@@ -505,13 +533,22 @@ const SWATCH = { constellation: 'radial-gradient(circle at 60% 40%, #E8D44D 0 22
                  pop: 'conic-gradient(#CC1A4A 0 33%, #3FF0C3 0 66%, #EECB5B 0)',
                  ink: 'linear-gradient(135deg, #EEEBE3 50%, #1A1916 50%)',
                  atlas: 'linear-gradient(135deg, #0F5A52, #04201D 55%, #C8DE78)' };
-let lockNow = -1, colorNow = -1, pickedAt = -9, lastState = {};
+let lockNow = -1, colorNow = -1, pickedAt = -9, mediaAt = -9, lastState = {};
 function buildNotch() {
   $('#looks').innerHTML = '<div class="chip plain" data-i="-1">Mix</div>' + LOOKS.map((l, i) =>
     `<div class="chip" data-i="${i}"><i style="background:${SWATCH[l.id] || '#444'}"></i>${l.name}</div>`).join('');
   $('#colors').innerHTML = '<div class="chip plain" data-c="-1">Cycle</div>' + PALETTE.map((c, i) =>
     `<div class="dot" data-c="${i}" style="background:${c}" title="${c}"></div>`).join('');
   $('#looks').onclick = e => { const el = e.target.closest('[data-i]'); if (el) pickLook(+el.dataset.i); };
+  $('#media').onclick = e => {
+    const el = e.target.closest('[data-m]');
+    if (!el) return;
+    const m = el.dataset.m;
+    mediaAt = now();
+    if (m === 'play') { toast(clock.playing ? 'Paused' : 'Playing'); $('#media').classList.toggle('playing', !clock.playing); api.play_pause(); }
+    else if (m === 'next') { toast('Next song'); api.next_track(); }
+    else { toast('Previous song'); api.prev_track(); }
+  };
   $('#colors').onclick = e => {
     const el = e.target.closest('[data-c]');
     if (!el) return;
@@ -556,7 +593,7 @@ function stepNotch(lk) {
 function drawNotch() {   // the black shape itself, on top of everything in the canvas
   const s = notchShape();
   if (!s) return;
-  ctx.save(); ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
+  ctx.save(); ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#000';
   ctx.beginPath(); ctx.roundRect(s.x0, notch.y - 2, s.x1 - s.x0, s.y1 - notch.y + 2, [0, 0, s.rb, s.rb]); ctx.fill();
   ctx.restore();
@@ -581,6 +618,7 @@ function markNotch() {
     el.classList.toggle('cur', lockNow < 0 && i === look);
   });
   document.querySelectorAll('#colors [data-c]').forEach(el => el.classList.toggle('on', +el.dataset.c === colorNow));
+  if (now() - mediaAt > 1.5) $('#media').classList.toggle('playing', !!clock.playing);   // after a tap, give the player time to answer
 }
 
 let toastTimer;

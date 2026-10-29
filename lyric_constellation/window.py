@@ -64,9 +64,19 @@ class Api:
         return "Two screens" if self._dual else "Only one screen connected"
 
     def play_pause(self):
-        import ctypes  # the keyboard's media key: works for YouTube Music, Spotify, anything Windows can control
-        ctypes.windll.user32.keybd_event(0xB3, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(0xB3, 0, 2, 0)
+        self._media_key(0xB3)
+
+    def next_track(self):
+        self._media_key(0xB0)
+
+    def prev_track(self):
+        self._media_key(0xB1)
+
+    @staticmethod
+    def _media_key(vk):
+        import ctypes  # the keyboard's media keys: work for YouTube Music, Spotify, anything Windows can control
+        ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(vk, 0, 2, 0)
 
     def set_style(self, i):
         self._cfg["style"] = int(i)

@@ -121,9 +121,16 @@ window.__heard = json => {
   const pos = m.offset + (Date.now() - r.startedAt) / 1000;   // where the song is now
   if (!clock.playing || Math.abs(pos - songPos()) > 0.4) clock = { pos, at: Date.now(), playing: true };
   const k = `${t.title}|${t.subtitle}`;
+  if (k === key && status === 'Listening…') status = '';   // "previous" restarted the same song
   if (k !== key) { key = k; tid++; load({ title: t.title, artist: t.subtitle || '', art: (t.images || {}).coverart || null }, tid); }
   nextListen = Date.now() + AGAIN;
 };
+
+function skipped() {   // another song is starting: listen again soon instead of in 20 s
+  clock = { pos: songPos(), at: Date.now(), playing: false };
+  status = 'Listening…';
+  nextListen = Date.now() + 2500;
+}
 
 const api = {
   async state() {
@@ -136,7 +143,13 @@ const api = {
   async set_color(i) { cfg.color = +i; store.set('cfg', cfg); },
   async set_style(i) { cfg.style = +i; store.set('cfg', cfg); },
   async set_lock() {}, async next_look() {}, async fullscreen() {},
-  async play_pause() { Media.playPause(); },
+  async play_pause() {   // the words freeze at once; a listen shortly after confirms whether it is playing
+    Media.playPause();
+    if (clock.playing) clock = { pos: songPos(), at: Date.now(), playing: false };
+    nextListen = Date.now() + 1500;
+  },
+  async next_track() { Media.next(); skipped(); },
+  async prev_track() { Media.previous(); skipped(); },
   async toggle_dual() { return 'One screen'; }, async swap() { return ''; },
 };
 // Without the microphone, a tap anywhere but the notch asks for it again (or opens the app's settings)
