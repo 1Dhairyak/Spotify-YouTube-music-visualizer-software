@@ -4,7 +4,16 @@
 <meta charset="utf-8">
 <title>Music Sync</title>
 <style>
-  /* One accent for now; more colors later = more values for --accent */
+  @font-face { font-family: 'Archivo'; src: url(fonts/archivo.woff2) format('woff2');
+    font-weight: 100 900; font-stretch: 62% 125%; }
+  @font-face { font-family: 'Archivo'; src: url(fonts/archivo-italic.woff2) format('woff2');
+    font-style: italic; font-weight: 100 900; font-stretch: 62% 125%; }
+  @font-face { font-family: 'League Gothic'; src: url(fonts/league-gothic.woff2) format('woff2'); }
+  @font-face { font-family: 'Alfa Slab One'; src: url(fonts/alfa-slab-one.woff2) format('woff2'); }
+  @font-face { font-family: 'Josefin Sans'; src: url(fonts/josefin-sans.woff2) format('woff2'); font-weight: 100 700; }
+  @font-face { font-family: 'Caveat'; src: url(fonts/caveat.woff2) format('woff2'); font-weight: 400 700; }
+  @font-face { font-family: 'Permanent Marker'; src: url(fonts/permanent-marker.woff2) format('woff2'); }
+
   :root { --accent: #e8d44d; --bg: #000; }
   * { margin: 0; box-sizing: border-box; }
   html, body { height: 100%; background: var(--bg); color: var(--accent); overflow: hidden; user-select: none;
@@ -16,7 +25,8 @@
   #art { width: 88px; height: 88px; border-radius: 14px; object-fit: cover; box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 22%, transparent); }
   #title { font-size: 26px; font-weight: 600; line-height: 1.2; }
   #artist { font-size: 15px; opacity: .6; margin-top: 4px; }
-  #status, #toast { position: fixed; left: 0; right: 0; text-align: center; font-size: 14px; }
+  #title, #artist, #cover .t, #cover .a { transition: color .6s; }
+  #status, #toast { position: fixed; left: 0; right: 0; text-align: center; font-size: 14px; z-index: 2; }
   #status { bottom: 32px; opacity: .45; }
   #toast { top: 28px; opacity: 0; transition: opacity .3s; }
   #toast.on { opacity: .8; }
@@ -32,6 +42,26 @@
     box-shadow: 0 0 80px color-mix(in srgb, var(--accent) 30%, transparent); }
   #cover .t { font-size: clamp(28px, 3.6vw, 64px); font-weight: 600; text-align: center; padding: 0 5vw; }
   #cover .a { font-size: clamp(16px, 1.6vw, 28px); opacity: .6; margin-top: -1.5vh; }
+
+  /* Top bar and cover screen in each look's lettering */
+  [data-look=pulse] #title, [data-look=pulse] #cover .t { font-family: Archivo; font-stretch: 125%; font-weight: 900;
+    text-transform: uppercase; }
+  [data-look=pulse] #artist, [data-look=pulse] #cover .a { font-family: Archivo; font-stretch: 125%; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em; font-size: 12px; }
+  [data-look=pulse] #cover .a { font-size: clamp(13px, 1.1vw, 20px); }
+  [data-look=pop] #title, [data-look=pop] #cover .t { font-family: 'League Gothic'; font-weight: 400; font-size: 40px;
+    text-transform: uppercase; letter-spacing: .02em; }
+  [data-look=pop] #cover .t { font-size: clamp(48px, 6vw, 110px); }
+  [data-look=pop] #artist, [data-look=pop] #cover .a { font-family: 'Caveat'; font-weight: 700; font-size: 22px; opacity: .8; }
+  [data-look=pop] #cover .a { font-size: clamp(24px, 2.2vw, 40px); }
+  [data-look=ink] #title, [data-look=ink] #cover .t { font-family: 'Permanent Marker'; text-transform: uppercase; font-weight: 400; }
+  [data-look=ink] #artist, [data-look=ink] #cover .a { font-family: 'Permanent Marker'; text-transform: uppercase; font-size: 14px; }
+  [data-look=ink] #cover .a { font-size: clamp(16px, 1.4vw, 26px); }
+  [data-look=atlas] #title, [data-look=atlas] #cover .t { font-family: Bahnschrift, 'Segoe UI', sans-serif; font-weight: 700;
+    font-stretch: 75%; text-transform: uppercase; letter-spacing: .02em; }
+  [data-look=atlas] #artist, [data-look=atlas] #cover .a { font-family: Bahnschrift, 'Segoe UI', sans-serif; font-weight: 300;
+    text-transform: uppercase; letter-spacing: .2em; }
+  [data-look=ink] #art, [data-look=pop] #art { border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -41,402 +71,184 @@
 <div id="status"></div>
 <div id="toast"></div>
 <script>
-// The whole scene moves to the next color every COLOR_EVERY seconds of the song, starting on the video's yellow.
-const PALETTE = ['#E8D44D', '#FFB020', '#FF7A3D', '#FF5E62', '#FF3B4E', '#FF4FA3', '#E056FD', '#9D7BFF',
-                 '#4D7CFF', '#3FB8FF', '#22E1E8', '#2EE6B6', '#3EE07A', '#B6F03C', '#C8956B'];
-const COLOR_EVERY = 20;  // seconds per color
-const COLOR_FADE = 2;    // seconds to blend into the next one
-let ACCENT = PALETTE[0];
-const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-function accent() {
-  const t = Math.max(0, songTime()), i = Math.floor(t / COLOR_EVERY), n = PALETTE.length;
-  const from = rgb(PALETTE[(i - 1 + n) % n]), to = rgb(PALETTE[i % n]);
-  const f = i ? Math.min(1, (t - i * COLOR_EVERY) / COLOR_FADE) : 1;
-  return `rgb(${to.map((v, k) => Math.round(from[k] + (v - from[k]) * f)).join(',')})`;
-}
-const SCENE = 13;      // words in a constellation before it clears (at the next line end)
-const SCENE_MAX = 18;  // ...or clears anyway at this many
-const HOLD = 2.0;      // seconds a line-end word stays big
-const SHRINK = 0.6;    // seconds it takes to shrink
-const CLEAR = 0.8;     // seconds a finished constellation takes to fade out
-const SMALL = 15;      // px, small labels
-const LAP = 4;         // seconds per loop of the border light
-const TAIL = 0.3;      // tail length, as a share of the border
+// ---------- shared by every look ----------
+const LOOKS = [];      // each ui/looks/*.js file adds one entry; the app shows one look per song, in order
 const WIN = +new URLSearchParams(location.search).get('win') || 0;   // 0 = main window, 1 = second screen
 let view = WIN ? 'cover' : 'both';     // both | stars | cover | gone
 document.body.className = 'view-' + view;
-let TOP = 150;         // stars stay below this; slides to 40 when the header moves to the other screen
-let sceneFade = 1;     // constellation opacity; 0 on the cover screen
+let TOP = 150;         // the lyrics stay below this; slides to 40 when the header moves to the other screen
+let sceneFade = 1;     // lyrics opacity; 0 on the cover screen
 
 const $ = s => document.querySelector(s);
 const cv = $('canvas'), ctx = cv.getContext('2d');
 let W, H;
 function resize() {
   const d = devicePixelRatio || 1;
-  W = innerWidth; H = innerHeight; cv.width = W * d; cv.height = H * d;
+  W = innerWidth; H = innerHeight; cv.width = Math.round(W * d); cv.height = Math.round(H * d);
   ctx.setTransform(d, 0, 0, d, 0, 0);
+  LOOKS.forEach(l => l.resize && l.resize());
 }
-addEventListener('resize', resize); resize();
+addEventListener('resize', resize);
 
-let api, rev = -1, track = { id: -1, words: [] };
+let api, rev = -1, track = { id: -1, words: [], phrases: [] };
 let clock = { pos: 0, at: performance.now(), playing: false };
 let offset = 0, fs = true;
-let nodes = [], links = [], shown = -1;   // shown = index of the last word placed
 
 const now = () => performance.now() / 1000;
 const songTime = () => clock.pos + (clock.playing ? (performance.now() - clock.at) / 1000 : 0) + offset;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const rand = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, f) => a + (b - a) * f;
 const easeOut = p => 1 - Math.pow(1 - clamp(p, 0, 1), 3);
+const easeInOut = p => { p = clamp(p, 0, 1); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
 const backOut = p => { p = clamp(p, 0, 1) - 1; return 1 + 2.7 * p * p * p + 1.7 * p * p; };
-const big = () => clamp(innerWidth * 0.055, 44, 96);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const stage = () => ({ x: 0, y: TOP, w: W, h: H - TOP, cx: W / 2, cy: TOP + (H - TOP) / 2 });
 
-let style = 0, tris = [], shards = [], waveScroll = 0;   // style = index into STYLES (bottom of this file)
-function clearScene() { nodes = []; links = []; tris = []; shards = []; }
-function reset() { clearScene(); shown = -1; }
-const center = () => ({ x: W / 2, y: TOP + (H - TOP) * 0.55 });
+// Seeded randomness, so a phrase gets the same layout every time it's shown (e.g. after seeking back).
+function hash(s) { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
+function rng(seed) {
+  return () => {
+    seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const pickR = (r, arr) => arr[Math.floor(r() * arr.length)];
 
-// A new word joins the current scene, or starts a fresh one when it's full.
-function place(wd) {
-  let scene = nodes.filter(n => !n.dying);
-  let prev = scene[scene.length - 1];
-  if (scene.length >= SCENE_MAX || (scene.length >= SCENE && prev.end)) {
-    scene.forEach(n => n.dying = now());
-    scene = []; prev = undefined;
+// How far a word is into being sung: 0 before, 1 a moment after it starts.
+const sung = (wd, t, dur = 0.15) => clamp((t - wd.t) / dur, 0, 1);
+const caps = s => s.toUpperCase();
+
+// Largest font size (px) at which `text` fits maxW, capped at maxPx. font(px) returns a CSS font string.
+function fitPx(text, font, maxW, maxPx, stretch) {
+  ctx.font = font(100);
+  if (stretch) ctx.fontStretch = stretch;
+  const w = ctx.measureText(text).width || 1;
+  ctx.fontStretch = 'normal';
+  return Math.min(maxPx, 100 * maxW / w);
+}
+function textW(text, font, stretch) {
+  ctx.font = font; if (stretch) ctx.fontStretch = stretch;
+  const w = ctx.measureText(text).width;
+  ctx.fontStretch = 'normal';
+  return w;
+}
+
+// A tile of random grain for film / paper textures.
+function noiseTile(size, light, alpha) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'), img = g.createImageData(size, size);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = light ? 255 : 0;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = Math.random() * 255 * alpha;
   }
-  const st = STYLES[style];
-  const n = Object.assign({ w: wd.w, end: !!wd.end, born: now(), seed: rand(0, 6.28), dying: 0 },
-                          (st.place || wanderPlace)(scene, prev));
-  (st.link || constellationLink)(scene, prev, n);
-  nodes.push(n);
-  if (st.onAdd) st.onAdd(n);
+  g.putImageData(img, 0, 0);
+  return c;
 }
 
-// Best-candidate in a wide horizontal band, drifting left to right like the video.
-function wanderPlace(scene, prev) {
-  const x0 = W * 0.08, x1 = W * 0.92, y0 = TOP + (H - TOP) * 0.3, y1 = TOP + (H - TOP) * 0.8;
-  const R = W * 0.12;
-  const dir = prev && prev.x > W * 0.72 ? [-1, 0.3] : [-0.3, 1];   // turn back before piling up on the right
-  let best, bestScore = -1;
-  for (let k = 0; k < 16; k++) {
-    const c = prev
-      ? { x: clamp(prev.x + rand(...dir) * R, x0, x1), y: clamp(prev.y + rand(-1, 1) * R * 0.7, y0, y1) }
-      : { x: rand(x0, x0 + (x1 - x0) * 0.35), y: rand(y0, y1) };
-    const score = scene.length ? Math.min(...scene.map(n => dist(n, c))) : 1;
-    if (score > bestScore) { bestScore = score; best = c; }
+// Full-screen layers that never change (gradients, vignettes) are drawn once per screen size and reused:
+// a big gradient fill costs ~9 ms a frame, pasting the cached image almost nothing.
+const layers = new Map();
+function layer(key, draw) {
+  const k = `${key}@${W}x${H}`;
+  let c = layers.get(k);
+  if (!c) { c = document.createElement('canvas'); c.width = W; c.height = H; draw(c.getContext('2d')); layers.set(k, c); }
+  return c;
+}
+
+// Album art as an <img>, reloaded only when it changes (looks use it for title cards).
+const artImg = new Image();
+let artSrc = null;
+function art() {
+  if (track.art !== artSrc) { artSrc = track.art; if (artSrc) artImg.src = artSrc; }
+  return artSrc && artImg.complete && artImg.naturalWidth ? artImg : null;
+}
+
+// Lyrics -> phrases: one per lyric line, long lines split into balanced chunks of at most 9 words.
+function phrasesOf(ws) {
+  const lines = []; let cur = [];
+  ws.forEach((w, i) => { cur.push(w); if (w.end || i === ws.length - 1) { lines.push(cur); cur = []; } });
+  const out = [];
+  for (const ln of lines) {
+    const parts = Math.ceil(ln.length / 9), size = Math.ceil(ln.length / parts);
+    for (let i = 0; i < ln.length; i += size) out.push(ln.slice(i, i + size));
   }
-  return best;
+  return out.map((words, i) => ({
+    i, words, t0: words[0].t, tEnd: words[words.length - 1].t,
+    t1: i + 1 < out.length ? out[i + 1][0].t : words[words.length - 1].t + 4,
+  }));
 }
 
-function chainLink(scene, prev, n) { if (prev) links.push([prev, n]); }
-function constellationLink(scene, prev, n) {
-  chainLink(scene, prev, n);
-  const near = scene.filter(m => m !== prev && dist(m, n) < W * 0.25).sort((a, b) => dist(a, n) - dist(b, n))[0];
-  if (near && Math.random() < 0.25) links.push([near, n]);
-}
-
-// Bring the constellation up to the word being sung right now.
-function step() {
-  if (W < 300 || H < TOP + 150) return;                  // minimized or tiny: place words once there's room
-  const ws = track.words, t = songTime();
-  let target = -1;
-  for (let lo = 0, hi = ws.length - 1; lo <= hi;) {        // last word with ws[i].t <= t
-    const mid = (lo + hi) >> 1;
-    if (ws[mid].t <= t) { target = mid; lo = mid + 1; } else hi = mid - 1;
+// The phrase director for the kinetic-typography looks: which phrase (or the title card) is on screen,
+// with the previous one kept briefly for its exit animation.
+const LEAD = 0.3;   // a phrase is laid out this long before its first word is sung
+const GAP = 6;      // an instrumental gap longer than this brings the title card back
+function direct(lk, T) {
+  const t = songTime(), P = track.phrases;
+  let k = -1;
+  for (let lo = 0, hi = P.length - 1; lo <= hi;) {
+    const m = (lo + hi) >> 1;
+    if (P[m].t0 - LEAD <= t) { k = m; lo = m + 1; } else hi = m - 1;
   }
-  if (target < shown - 2) reset();                       // seeked backwards (ignore tiny jitter)
-  if (target - shown > SCENE) { reset(); shown = target - SCENE; } // seeked far forwards
-  while (shown < target) place(ws[++shown]);
-}
-
-function star(x, y, r) {   // 4-point sparkle
-  ctx.beginPath();
-  ctx.moveTo(x, y - r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.quadraticCurveTo(x, y, x, y + r);
-  ctx.quadraticCurveTo(x, y, x - r, y);
-  ctx.quadraticCurveTo(x, y, x, y - r);
-  ctx.fill();
-}
-
-function tri(x, y, q, rot = 0) {   // triangle path (pointing up at rot = 0); caller fills or strokes
-  ctx.beginPath();
-  for (let k = 0; k < 3; k++) {
-    const t = rot - Math.PI / 2 + k * 2.0944;
-    ctx[k ? 'lineTo' : 'moveTo'](x + Math.cos(t) * q, y + Math.sin(t) * q);
+  const ph = P[k];
+  const card = !ph || (t > ph.tEnd + 2.5 && ph.t1 - ph.tEnd > GAP && ph.t1 - t > 1.2);
+  const key = (card ? 'card' : 'ph') + k;
+  const st = lk.st || (lk.st = {});
+  if (!st.cur || st.cur.key !== key || st.cur.W !== W || st.cur.TOP !== Math.round(TOP)) {
+    const resized = st.cur && st.cur.key === key;
+    if (st.cur && !resized) { st.prev = st.cur; st.prev.out = T; }
+    st.cur = { key, k, card, ph, at: resized ? st.cur.at : T, W, TOP: Math.round(TOP), r: rng(hash(track.title + ':' + key)) };
+    st.cur.L = card ? lk.buildCard(st.cur) : lk.build(ph, st.cur.r, st.cur);
+    if (!resized && lk.enter) lk.enter(st.cur, st.prev, T);
   }
-  ctx.closePath();
+  if (st.prev && T - st.prev.out > lk.exit) st.prev = null;
+  return { t, cur: st.cur, prev: st.prev };
 }
 
-function line(a, b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
-
-// Node markers: (x, y, radius, is it the current word, its alpha)
-function sparkle(x, y, r, isCur, a) {
-  star(x, y, r);
-  if (isCur) {   // outlined diamond halo
-    ctx.globalAlpha = a * 0.45;
-    const q = r * 1.8;
-    ctx.beginPath(); ctx.moveTo(x, y - q); ctx.lineTo(x + q, y);
-    ctx.lineTo(x, y + q); ctx.lineTo(x - q, y); ctx.closePath(); ctx.stroke();
-  }
+// ---------- the look manager ----------
+let look = -1, lookSaved = null;
+const ghost = document.createElement('canvas');   // last frame of the old look/style, faded out over the new one
+let ghostAt = -9;
+function snapshot() {
+  ghost.width = cv.width; ghost.height = cv.height; ghost.getContext('2d').drawImage(cv, 0, 0); ghostAt = now();
 }
-function triMarker(x, y, r, isCur, a) {
-  tri(x, y, r * 1.1);
-  if (!isCur) return ctx.fill();
-  ctx.stroke();
-  tri(x, y, r * 0.45); ctx.fill();
+function setLook(i) {
+  i = ((i % LOOKS.length) + LOOKS.length) % LOOKS.length;
+  if (i === look) return LOOKS[i];
+  if (look >= 0) snapshot();
+  look = i;
+  const lk = LOOKS[i];
+  document.documentElement.dataset.look = lk.id;
+  lk.st = null;
+  if (lk.reset) lk.reset();
+  return lk;
 }
-
-// Point at distance d (wrapping) along the screen edge, clockwise from the top-left corner.
-function edge(d) {
-  const i = 3, w = W - 2 * i, h = H - 2 * i, P = 2 * (w + h);
-  d = ((d % P) + P) % P;
-  if (d < w) return [i + d, i];
-  if ((d -= w) < h) return [i + w, i + d];
-  if ((d -= h) < w) return [i + w - d, i + h];
-  return [i, i + h - (d - w)];
+function setAccent(c) {
+  if (c && c !== setAccent.last) document.documentElement.style.setProperty('--accent', setAccent.last = c);
 }
 
-function border(T) {
-  const P = 2 * (W + H - 12), head = (T / LAP % 1) * P, N = 60;
-  ctx.strokeStyle = ctx.fillStyle = ACCENT;
-  ctx.shadowColor = ACCENT;
-  ctx.globalAlpha = 0.35; ctx.lineWidth = 3; ctx.shadowBlur = 22;   // static glow on the whole edge
-  ctx.strokeRect(3, 3, W - 6, H - 6);
-  ctx.shadowBlur = 0;
-  for (let k = 0; k < N; k++) {                                       // fading tail
-    const a = edge(head - TAIL * P * (1 - k / N)), b = edge(head - TAIL * P * (1 - (k + 1) / N));
-    const f = (k + 1) / N;
-    ctx.globalAlpha = f * f * 0.9; ctx.lineWidth = 2 + f * 2;
-    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-  }
-  const [hx, hy] = edge(head);                                        // bright head
-  ctx.globalAlpha = 1; ctx.shadowBlur = 25;
-  ctx.beginPath(); ctx.arc(hx, hy, 3.5, 0, 6.29); ctx.fill();
-  ctx.shadowBlur = 0;
-}
-
-function draw() {
-  const T = now();
-  const c = accent();
-  if (c !== ACCENT) document.documentElement.style.setProperty('--accent', ACCENT = c);
-  setStyle(styleBase + styleSlot());
+function frame() {
+  const T = now(), lk = setLook(look < 0 ? 0 : look);
+  if (lk.pre) lk.pre(T);                                       // may snapshot this frame for a crossfade
+  if (cv.width !== Math.round(innerWidth * (devicePixelRatio || 1))) resize();   // moved to a screen with other scaling
+  ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.shadowBlur = 0;
   ctx.clearRect(0, 0, W, H);
+  TOP += ((view === 'both' ? 150 : 40) - TOP) * 0.05;          // smooth slide when the layout changes
+  sceneFade += ((view === 'cover' ? 0 : 1) - sceneFade) * 0.06;
+  if (W >= 300 && H >= TOP + 150) {                            // minimized or tiny: wait until there's room
+    ctx.save(); lk.frame(T); ctx.restore();
+  }
   if (T - ghostAt < 0.8) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1 - (T - ghostAt) / 0.8; ctx.drawImage(ghost, 0, 0);
     ctx.restore();
   }
-  border(T);
-  TOP += ((view === 'both' ? 150 : 40) - TOP) * 0.05;          // smooth slide when the layout changes
-  sceneFade += ((view === 'cover' ? 0 : 1) - sceneFade) * 0.06;
-
-  nodes = nodes.filter(n => !n.dying || T - n.dying < CLEAR);
-  const alive = new Set(nodes);
-  links = links.filter(([a, b]) => alive.has(a) && alive.has(b));
-  tris = tris.filter(t => t.every(m => alive.has(m)));
-  const alpha = n => sceneFade * (n.dying ? 1 - (T - n.dying) / CLEAR : 1) * clamp((T - n.born) / 0.2, 0, 1);
-  const cur = nodes[nodes.length - 1];
-  const st = STYLES[style];
-  if (st.tick) st.tick(T);
-  nodes.forEach((n, k) => n.p = st.pos ? st.pos(n, T, nodes[k + 1]) : n);   // where each word is drawn now
-  const P = n => n.p;
-
-  ctx.save();
-  ctx.translate(Math.sin(T * 0.13) * 8, Math.cos(T * 0.11) * 5);   // slow drift
-  ctx.fillStyle = ctx.strokeStyle = ACCENT;
-  ctx.lineWidth = 1;
-  if (st.under) { st.under(T, alpha, P); ctx.fillStyle = ctx.strokeStyle = ACCENT; ctx.lineWidth = 1; ctx.shadowBlur = 0; }
-  for (const [a, b] of links) {
-    ctx.globalAlpha = 0.28 * Math.min(alpha(a), alpha(b));
-    line(P(a), P(b));
-  }
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-  nodes.forEach((n, k) => {
-    const a = alpha(n), p = n.p;
-    const isCur = n === cur && !n.dying;
-    const next = nodes[k + 1];
-    // Line-end words are big for HOLD seconds (or until the next big word), then shrink; others are small.
-    let s = 1;
-    if (n.end) {
-      const nextBig = nodes.slice(k + 1).find(m => m.end);
-      s = easeOut((T - Math.min(n.born + HOLD, nextBig ? nextBig.born : Infinity)) / SHRINK);
-    }
-    // Star: big with a halo while current, small afterwards.
-    const settle = next ? easeOut((T - next.born) / 0.4) : 0;
-    const r = (8 + (3 - 8) * settle) * backOut((T - n.born) / 0.35);
-    ctx.globalAlpha = a * (isCur ? 1 : 0.75 + 0.25 * Math.sin(T * 2 + n.seed));
-    if (isCur) { ctx.shadowColor = ACCENT; ctx.shadowBlur = 16; }
-    (st.marker || sparkle)(p.x, p.y, r, isCur, a);
-    ctx.shadowBlur = 0;
-
-    // Label above the star.
-    const grow = 0.85 + 0.15 * easeOut((T - n.born) / 0.25);
-    const size = (big() + (SMALL - big()) * s) * (n.end ? grow : 1);
-    ctx.font = `${s < 0.5 ? 600 : 500} ${size}px "Segoe UI Variable Display", "Segoe UI", sans-serif`;
-    ctx.letterSpacing = s < 0.5 ? '-0.01em' : '0px';
-    const half = ctx.measureText(n.w).width / 2;
-    if (s < 0.5) { ctx.shadowColor = ACCENT; ctx.shadowBlur = 18 * (1 - s); }
-    ctx.globalAlpha = a * (1 - (isCur ? 0.1 : 0.4) * s);
-    ctx.fillText(n.w, clamp(p.x, half + 24, W - half - 24), p.y - r - 6);
-    ctx.shadowBlur = 0;
-  });
-  ctx.restore();
+  requestAnimationFrame(frame);
 }
-
-// ---------- styles (T or 1-6 to switch; delete an entry to drop a style) ----------
-
-// Low-poly mesh: link to the 2 nearest stars and tint each triangle.
-function meshLink(scene, prev, n) {
-  const [a, b] = scene.slice().sort((p, q) => dist(p, n) - dist(q, n));
-  if (a) links.push([a, n]);
-  if (b) { links.push([b, n]); tris.push([a, b, n]); }
-}
-function meshUnder(T, alpha, P) {
-  for (const t of tris) {
-    ctx.globalAlpha = 0.08 * Math.min(...t.map(alpha));
-    const [p, q, r] = t.map(P);
-    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.lineTo(r.x, r.y); ctx.closePath(); ctx.fill();
-  }
-}
-
-// Prism: the current word sits in a slowly turning triangle; earlier words gather at its corners.
-const prismR = () => Math.min(W * 0.5, H - TOP) * 0.36;
-function prismCorner(k, T) {
-  const c = center(), t = T * 0.12 - Math.PI / 2 + k * 2.0944;
-  return { x: c.x + Math.cos(t) * prismR(), y: c.y + Math.sin(t) * prismR() };
-}
-function prismPlace(scene) {
-  const k = scene.length % 3, R = prismR();
-  const mates = scene.filter(m => m.k === k);
-  let best, bestScore = -1;
-  for (let i = 0; i < 12; i++) {   // spread words around the same corner
-    const t = rand(0, 6.28), d = rand(0.18, 0.55) * R, c = { x: Math.cos(t) * d, y: Math.sin(t) * d * 0.7 };
-    const score = mates.length ? Math.min(...mates.map(m => Math.hypot(m.ox - c.x, m.oy - c.y))) : 1;
-    if (score > bestScore) { bestScore = score; best = c; }
-  }
-  return { x: 0, y: 0, k, ox: best.x, oy: best.y };
-}
-function prismPos(n, T, next) {
-  const c = center(), q = prismCorner(n.k, T), f = next ? easeOut((T - next.born) / 0.8) : 0;
-  return { x: c.x + (q.x + n.ox - c.x) * f, y: c.y + (q.y + n.oy - c.y) * f };   // flies out of the center
-}
-function prismBurst(n) {
-  if (!n.end) return;
-  const c = center();
-  for (let i = 0; i < 12; i++) {
-    const t = rand(0, 6.28), v = rand(80, 260);
-    shards.push({ x: c.x, y: c.y, vx: Math.cos(t) * v, vy: Math.sin(t) * v, q: rand(5, 14),
-                  rot: rand(0, 6.28), spin: rand(-2, 2), born: now() });
-  }
-}
-function prismUnder(T, alpha, P) {
-  const c = center();
-  ctx.globalAlpha = 0.5 * sceneFade; ctx.lineWidth = 1.5; ctx.shadowColor = ACCENT; ctx.shadowBlur = 14;
-  tri(c.x, c.y, prismR(), T * 0.12); ctx.stroke();
-  ctx.shadowBlur = 0; ctx.lineWidth = 1;
-  for (const n of nodes) { ctx.globalAlpha = 0.22 * alpha(n); line(P(n), prismCorner(n.k, T)); }
-  shards = shards.filter(s => T - s.born < 1.4);
-  for (const s of shards) {
-    const age = T - s.born;
-    ctx.globalAlpha = sceneFade * 0.8 * (1 - age / 1.4);
-    tri(s.x + s.vx * age, s.y + s.vy * age, s.q, s.rot + age * s.spin); ctx.stroke();
-  }
-}
-
-// Orbit: words ride 3 slowly turning rings; spokes to the center make triangles between rings.
-const RINGS = [0.17, 0.29, 0.41], SPIN = [0.06, -0.04, 0.025];
-function orbitXY(ring, ang) {
-  const c = center(), r = (H - TOP) * RINGS[ring];
-  return { x: c.x + Math.cos(ang) * r * 1.8, y: c.y + Math.sin(ang) * r };
-}
-function orbitPlace(scene) {
-  const ring = scene.length % 3, mates = scene.filter(m => m.ring === ring);
-  let best = 0, bestScore = -1;
-  for (let i = 0; i < 12; i++) {
-    const a = rand(0, 6.28);
-    const score = mates.length ? Math.min(...mates.map(m => Math.abs(Math.atan2(Math.sin(a - m.ang), Math.cos(a - m.ang))))) : 1;
-    if (score > bestScore) { bestScore = score; best = a; }
-  }
-  return { x: 0, y: 0, ring, ang: best };
-}
-function orbitPos(n, T) { return orbitXY(n.ring, n.ang + T * SPIN[n.ring]); }
-function orbitUnder(T, alpha, P) {
-  const c = center();
-  ctx.globalAlpha = 0.08 * sceneFade;
-  for (const k of RINGS) {
-    const r = (H - TOP) * k;
-    ctx.beginPath(); ctx.ellipse(c.x, c.y, r * 1.8, r, 0, 0, 6.29); ctx.stroke();
-  }
-  for (const n of nodes) { ctx.globalAlpha = 0.12 * alpha(n); line(c, P(n)); }
-  ctx.globalAlpha = 0.6 * sceneFade; star(c.x, c.y, 5);
-}
-
-// Wave: words flow along a sine wave with triangle markers; the line scrolls left as the song goes on.
-function wavePlace(scene) {
-  const i = scene.length;
-  return { x: 0, y: 0, wx: i * W * 0.085, wy: Math.sin(i * 0.8) * (H - TOP) * 0.14 };
-}
-function waveTick() {
-  const cur = nodes.filter(n => !n.dying).pop();
-  waveScroll += ((cur ? cur.wx : 0) - W * 0.62 - waveScroll) * 0.04;
-}
-function wavePos(n, T) {
-  return { x: n.wx - waveScroll, y: center().y + n.wy + Math.sin(T * 1.3 + n.wx * 0.012) * 5 };
-}
-
-// Shatter grid: words snap to a hidden triangle grid and light up the triangles around them for a while.
-const gridG = () => W * 0.065;
-function gridOrigin() { return TOP + (H - TOP) * 0.3; }
-function gridPlace(scene, prev) {
-  const g = gridG(), h = g * 0.866, p = wanderPlace(scene, prev);
-  const row = Math.round((p.y - gridOrigin()) / h), off = (row & 1) * g / 2;
-  return { x: Math.round((p.x - off) / g) * g + off, y: gridOrigin() + row * h };
-}
-function gridUnder(T, alpha, P) {
-  const g = gridG(), h = g * 0.866, y0 = gridOrigin();
-  ctx.globalAlpha = 0.1 * sceneFade;   // faint lattice dots
-  for (let row = -1; y0 + row * h < H - 20; row++)
-    for (let x = (row & 1) * g / 2; x < W; x += g) ctx.fillRect(x - 1, y0 + row * h - 1, 2, 2);
-  for (const n of nodes) {   // lit hexagon of 6 triangles around each word, fading with age
-    const life = Math.exp(-(T - n.born) / 3) * alpha(n), p = P(n);
-    const ring = [0, 1, 2, 3, 4, 5].map(k => ({ x: p.x + Math.cos(k * 1.0472) * g, y: p.y + Math.sin(k * 1.0472) * g }));
-    ctx.globalAlpha = 0.05 * life;
-    ctx.beginPath(); ring.forEach((q, k) => ctx[k ? 'lineTo' : 'moveTo'](q.x, q.y)); ctx.closePath(); ctx.fill();
-    ctx.globalAlpha = 0.35 * life;
-    ring.forEach((q, k) => { line(p, q); line(q, ring[(k + 1) % 6]); });
-  }
-}
-
-const STYLES = [
-  { name: 'Constellation' },
-  { name: 'Low-poly mesh', link: meshLink, under: meshUnder },
-  { name: 'Prism', place: prismPlace, link: () => {}, pos: prismPos, under: prismUnder, onAdd: prismBurst },
-  { name: 'Orbit', place: orbitPlace, link: chainLink, pos: orbitPos, under: orbitUnder },
-  { name: 'Wave', place: wavePlace, link: chainLink, pos: wavePos, tick: waveTick, marker: triMarker },
-  { name: 'Shatter grid', place: gridPlace, link: chainLink, under: gridUnder },
-];
-
-// Styles take turns every STYLE_EVERY seconds of the song; T / 1-6 shift where the rotation is.
-const STYLE_EVERY = 30;
-let styleBase = 0, savedStyle = null;
-const styleSlot = () => Math.floor(Math.max(0, songTime()) / STYLE_EVERY);
-const ghost = document.createElement('canvas');   // last frame of the old style, faded out over the new one
-let ghostAt = -9;
-
-function setStyle(i) {
-  i = ((i % STYLES.length) + STYLES.length) % STYLES.length;
-  if (i !== style) {
-    ghost.width = cv.width; ghost.height = cv.height; ghost.getContext('2d').drawImage(cv, 0, 0); ghostAt = now();
-    style = i; clearScene();
-  }
-  return STYLES[i].name;
-}
-
-(function frame() { step(); draw(); requestAnimationFrame(frame); })();
 
 // ---------- talking to app.py ----------
 
@@ -463,13 +275,17 @@ async function poll() {
     $('#status').textContent = s.status;
     view = !s.dual ? (WIN ? 'gone' : 'both') : (WIN === s.stars_on ? 'stars' : 'cover');
     document.body.className = 'view-' + view;
-    if (s.style !== savedStyle) styleBase = savedStyle = s.style;   // startup, or changed on the other screen
+    if (s.look !== lookSaved) { lookSaved = s.look; setLook(s.look); }   // new song, N key, or the other screen
+    LOOKS.forEach(l => l.poll && l.poll(s));
     if (s.rev !== rev) {
       rev = s.rev;
       const t = await api.track();
-      if (t.id !== track.id) reset();
-      if (t.id !== track.id || t.title !== track.title || t.art !== track.art) showTrack(t);
+      t.phrases = phrasesOf(t.words);
+      const changed = t.id !== track.id;
+      if (changed || t.title !== track.title || t.art !== track.art) showTrack(t);
       track = t;
+      if (changed) LOOKS.forEach(l => { l.st = null; if (l.reset) l.reset(); });
+      else LOOKS.forEach(l => { l.st = null; });   // lyrics arrived: lay the phrases out again
     }
   } catch (e) { console.error(e); }
 }
@@ -488,15 +304,14 @@ addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); toast(clock.playing ? 'Paused' : 'Playing'); api.play_pause(); return; }
   if (e.key === 'd' || e.key === 'D') { api.toggle_dual().then(toast); return; }
   if (e.key === 's' || e.key === 'S') { api.swap().then(toast); return; }
-  const pick = e.key === 't' || e.key === 'T' ? style + 1 : '123456789'.indexOf(e.key);
-  if (pick >= 0 && (pick < STYLES.length || e.key.toLowerCase() === 't')) {
-    const n = STYLES.length;
-    styleBase = ((pick - styleSlot()) % n + n) % n;   // show the picked style now, then keep rotating
-    setStyle(pick);
-    toast(`Style ${style + 1}: ${STYLES[style].name}`);
-    api.set_style(savedStyle = styleBase);
+  if (e.key === 'n' || e.key === 'N') {
+    lookSaved = (lookSaved || 0) + 1;
+    const lk = setLook(lookSaved);
+    toast(`Look ${look + 1}: ${lk.name}`);
+    api.next_look();
     return;
   }
+  if (LOOKS[look] && LOOKS[look].key && LOOKS[look].key(e)) return;
   if (e.key === 'ArrowRight') offset += 0.1;
   else if (e.key === 'ArrowLeft') offset -= 0.1;
   else if (e.key === '0') offset = 0;
@@ -504,6 +319,21 @@ addEventListener('keydown', e => {
   offset = Math.round(offset * 10) / 10;
   toast(offset ? `Lyrics ${offset > 0 ? 'earlier' : 'later'} by ${Math.abs(offset).toFixed(1)} s` : 'Lyrics timing reset');
 });
+</script>
+<!-- One file per look; the order here is the order songs take turns in. Delete a line to drop a look. -->
+<script src="looks/constellation.js"></script>
+<script src="looks/pulse.js"></script>
+<script src="looks/pop.js"></script>
+<script src="looks/ink.js"></script>
+<script src="looks/atlas.js"></script>
+<script>
+resize();
+// Start drawing once the fonts are in, so the first layouts are measured with the real lettering.
+Promise.race([
+  Promise.all(['900 40px Archivo', 'italic 900 40px Archivo', '40px "League Gothic"', '40px "Alfa Slab One"',
+               '700 40px "Josefin Sans"', '700 40px Caveat', '40px "Permanent Marker"'].map(f => document.fonts.load(f))),
+  new Promise(r => setTimeout(r, 3000)),
+]).then(() => requestAnimationFrame(frame));
 </script>
 </body>
 </html>

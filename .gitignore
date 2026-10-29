@@ -3,5 +3,6 @@ cache/
 settings.json
 music-sync.log
 __pycache__/
+.claude/
 # reference clips
 *.mp4

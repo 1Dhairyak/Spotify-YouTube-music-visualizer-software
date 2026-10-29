@@ -339,14 +339,25 @@ class Api:
     def __init__(self, player):
         self._player, self._wins, self._dual, self._open = player, [], False, True
         self._lock = threading.Lock()
-        self._cfg = {"mode": "auto", "stars_on": 0, "style": 0}  # mode: auto (two screens when available) | single
+        # mode: auto (two screens when available) | single; look: counts songs, the UI shows look % number of looks
+        self._cfg = {"mode": "auto", "stars_on": 0, "style": 0, "look": 0}
         if SETTINGS.exists():
             self._cfg.update(json.loads(SETTINGS.read_text("utf-8")))
+        self._seen_tid, self._look_lock = 0, threading.Lock()
 
     def state(self):
         p = self._player
+        with self._look_lock:  # both screens poll at once; advance only once per song
+            if p.tid != self._seen_tid and p.track["id"] == p.tid and p.track["title"]:
+                self._seen_tid = p.tid  # a new song started: the next look takes over
+                self.next_look()
         return {"rev": p.rev, "pos": p.now(), "playing": p.playing, "status": p.status,
-                "dual": self._dual, "stars_on": self._cfg["stars_on"], "style": self._cfg["style"]}
+                "dual": self._dual, "stars_on": self._cfg["stars_on"], "style": self._cfg["style"],
+                "look": self._cfg["look"]}
+
+    def next_look(self):
+        self._cfg["look"] += 1
+        self._save()
 
     def track(self):
         return self._player.track
