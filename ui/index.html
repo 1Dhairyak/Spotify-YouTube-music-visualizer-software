@@ -86,6 +86,7 @@
   #notch.open .in { opacity: 1; transition: opacity .3s .12s; }
   #notch .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
   #notch:not(.colors) #colors { display: none; }
+  .phone #looks { display: none; }
   .chip { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border-radius: 99px; background: #1c1c1c;
     cursor: pointer; white-space: nowrap; transition: background .25s, color .25s, box-shadow .25s; }
   .chip:hover { background: #2c2c2c; }
@@ -388,8 +389,12 @@ let ghostAt = -9;
 function snapshot() {
   ghost.width = cv.width; ghost.height = cv.height; ghost.getContext('2d').drawImage(cv, 0, 0); ghostAt = now();
 }
+let lookWant = 0;   // the look asked for (song turn, notch, N key); a phone shows Constellation whatever it is
+const isPhone = () => innerWidth < 700;
 function setLook(i) {
   i = (((Number(i) || 0) % LOOKS.length) + LOOKS.length) % LOOKS.length;   // never NaN: that would blank the screen
+  lookWant = i;
+  if (isPhone()) i = Math.max(0, LOOKS.findIndex(l => l.id === 'constellation'));
   if (i === look) return LOOKS[i];
   if (look >= 0) snapshot();
   look = i;
@@ -406,7 +411,7 @@ function setAccent(c) {
 let lastTs = 0;
 function frame(ts) {
   dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
-  const lk = setLook(look < 0 ? 0 : look);
+  const lk = setLook(lookWant);   // also switches to/from Constellation when the window crosses phone width
   stepMouse(); stepNotch(lk);                                  // these keep real speed; the looks below get slowed dt
   rate += ((clock.playing ? 1 : 0.1) - rate) * ease(0.04);
   dt *= rate; sceneT += dt;
@@ -525,6 +530,7 @@ const notch = { w: 180, h: 26, r: 16, y: 0, vw: 0, vh: 0, vr: 0, vy: 0, open: fa
                 openW: 780, openH: 110 };
 function measureNotch() {   // the open panel's size: measured only when its contents change, never per frame
   notch.openW = Math.min(780, innerWidth * 0.96);
+  document.documentElement.classList.toggle('phone', isPhone());   // phone: no look chips, only the colors
   document.documentElement.style.setProperty('--open-w', notch.openW + 'px');   // the notch and the header both use it
   notch.openH = Math.ceil($('#notch .in').offsetHeight);
   // under ~160px left for the title beside the open notch: put the header below it instead
