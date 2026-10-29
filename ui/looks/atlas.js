@@ -157,8 +157,7 @@
       let off = -len / 2;
       const centers = ws.map(wd => { const w = measure(caps(wd.w), road(px)), c = off + w / 2; off += w + space; return c; });
       Object.assign(L, { seg, ang, text, px, len, mx, my, centers,
-                         cam: { x: mx + Math.cos(ang) * centers[0], y: my + Math.sin(ang) * centers[0], rot: -ang + tilt, z } });
-      if (Math.abs(((L.cam.rot + Math.PI) % (2 * Math.PI)) - Math.PI) > Math.PI / 2) L.cam.rot += Math.PI;   // keep text upright
+                         cam: { x: mx + Math.cos(ang) * centers[0], y: my + Math.sin(ang) * centers[0], rot: -ang + tilt, z } });   // on screen the text sits at angle `tilt`, always upright
     }
     return L;
   }
