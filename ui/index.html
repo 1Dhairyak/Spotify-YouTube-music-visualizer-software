@@ -63,15 +63,14 @@
     text-transform: uppercase; letter-spacing: .2em; }
   [data-look=ink] #art, [data-look=pop] #art { border-radius: 6px; }
 
-  /* The notch: a black pill at the top center that opens, on hover, into the look and color pickers */
-  #notch { position: fixed; top: 0; left: 50%; z-index: 5; width: 180px; min-height: 26px; max-height: 26px; transform: translateX(-50%);
-    background: #000; color: #fff; border-radius: 0 0 16px 16px; overflow: hidden;
-    font: 500 13px "Segoe UI Variable Text", "Segoe UI", sans-serif;
-    transition: width .5s cubic-bezier(.2, .9, .25, 1.08), max-height .5s cubic-bezier(.2, .9, .25, 1.08),
-                border-radius .5s, box-shadow .5s; }
-  #notch:hover { width: min(780px, 96vw); max-height: 240px; border-radius: 0 0 30px 30px; box-shadow: 0 14px 44px rgba(0,0,0,.5); }
-  #notch .in { display: grid; gap: 12px; padding: 16px 18px; opacity: 0; transition: opacity .2s; }
-  #notch:hover .in { opacity: 1; transition: opacity .3s .15s; }
+  /* The notch: a black pill at the top center that opens, on hover, into the look and color pickers. The black shape
+     is drawn in the canvas (drawNotch) and moved by a spring; this element is only the panel of chips, a fixed size,
+     fading in and out, so opening the notch never relayouts or repaints the page. */
+  #notch { position: fixed; top: 0; left: 50%; z-index: 5; width: var(--open-w, 780px); transform: translateX(-50%);
+    color: #fff; pointer-events: none; font: 500 13px "Segoe UI Variable Text", "Segoe UI", sans-serif; }
+  #notch.open { pointer-events: auto; }
+  #notch .in { display: grid; gap: 12px; padding: 16px 18px; opacity: 0; transition: opacity .18s; }
+  #notch.open .in { opacity: 1; transition: opacity .3s .12s; }
   #notch .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
   #notch:not(.colors) #colors { display: none; }
   .chip { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border-radius: 99px; background: #1c1c1c;
@@ -84,6 +83,14 @@
   .dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; transition: transform .2s, box-shadow .25s; }
   .dot:hover { transform: scale(1.15); }
   .dot.on { box-shadow: 0 0 0 2px #000, 0 0 0 4px #fff; }
+
+  /* The cursor: a soft glow in the look's color instead of the arrow; fades after 2 s still */
+  html, body, * { cursor: none !important; }
+  #cursor { position: fixed; left: 0; top: 0; z-index: 10; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
+    pointer-events: none; opacity: 0; transition: opacity .35s, scale .25s; will-change: transform;
+    background: radial-gradient(circle, #fff 0 16%, var(--accent) 32%, color-mix(in srgb, var(--accent) 35%, transparent) 50%, transparent 70%); }
+  #cursor.on { opacity: .95; }
+  #cursor.big { scale: 1.5; }
 </style>
 </head>
 <body>
@@ -93,6 +100,7 @@
 <div id="status"></div>
 <div id="toast"></div>
 <div id="notch"><div class="in"><div class="row" id="looks"></div><div class="row" id="colors"></div></div></div>
+<div id="cursor"></div>
 <script>
 // ---------- shared by every look ----------
 const LOOKS = [];      // each ui/looks/*.js file adds one entry; the app shows one look per song, in order
@@ -127,6 +135,133 @@ const easeInOut = p => { p = clamp(p, 0, 1); return p < .5 ? 4 * p * p * p : 1 -
 const backOut = p => { p = clamp(p, 0, 1) - 1; return 1 + 2.7 * p * p * p + 1.7 * p * p; };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const stage = () => ({ x: 0, y: TOP, w: W, h: H - TOP, cx: W / 2, cy: TOP + (H - TOP) / 2 });
+
+// ---------- smooth timing: the same motion at 60, 144 or 180 Hz ----------
+let dt = 1 / 60;   // seconds since the last frame (capped)
+// k60 = how much of the way to its target something moves per frame at 60 fps; scaled to the real frame time
+const ease = k60 => 1 - Math.pow(1 - k60, dt * 60);
+
+// ---------- glow sprites: a soft round glow drawn once and pasted (shadowBlur is a GPU blur pass per draw) ----------
+const sprites = new Map();
+function glowSprite(color, r) {
+  r = Math.max(4, Math.round(r / 4) * 4);
+  const k = color + r;
+  let c = sprites.get(k);
+  if (!c) {
+    if (sprites.size > 300) sprites.clear();   // colors blend over time: keep the cache small
+    c = document.createElement('canvas'); c.width = c.height = 2 * r;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(r, r, 0, r, r, r);
+    gr.addColorStop(0, color); gr.addColorStop(0.25, color); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.globalAlpha = 1; g.fillStyle = gr; g.fillRect(0, 0, 2 * r, 2 * r);
+    sprites.set(k, c);
+  }
+  return c;
+}
+function glowAt(x, y, r, color, a) {
+  if (a <= 0.004) return;
+  ctx.globalAlpha = a; ctx.drawImage(glowSprite(color, r), x - r, y - r, 2 * r, 2 * r);
+}
+// Glowing text: a word's blurred halo, rendered once at 64 px and scaled to any size, then pasted under the crisp text.
+const halos = new Map();
+function drawHalo(s, font, px, color, blur, x, y, align, baseline, a) {   // font: px => CSS font string
+  if (a <= 0.004 || !s) return;
+  const B = 64, sc = px / B, k = s + '|' + font(B) + '|' + color + '|' + blur;
+  let c = halos.get(k);
+  if (!c) {
+    if (halos.size > 200) halos.clear();
+    const g0 = document.createElement('canvas').getContext('2d');
+    g0.font = font(B); const m = g0.measureText(s);
+    const pad = Math.ceil(blur * 2), asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent;
+    c = document.createElement('canvas'); c.width = Math.ceil(m.width) + pad * 2; c.height = Math.ceil(asc + desc) + pad * 2;
+    const g = c.getContext('2d');
+    g.font = font(B); g.textBaseline = 'alphabetic'; g.fillStyle = g.shadowColor = color; g.shadowBlur = blur;
+    g.fillText(s, pad, pad + asc);
+    Object.assign(c, { pad, asc, desc, tw: m.width });
+    halos.set(k, c);
+  }
+  const left = align === 'center' ? x - c.tw * sc / 2 : align === 'right' ? x - c.tw * sc : x;
+  const base = baseline === 'bottom' ? y - c.desc * sc : baseline === 'middle' ? y + (c.asc - c.desc) * sc / 2 : y;
+  ctx.globalAlpha = a;
+  ctx.drawImage(c, left - c.pad * sc, base - (c.pad + c.asc) * sc, c.width * sc, c.height * sc);
+}
+
+// Text as an image: outlined (stroked) text is re-traced on every draw, which is slow for big or rotated words, so it's
+// rendered once (at the screen's pixel density, times res for text that gets zoomed) and pasted from then on.
+const textImgs = new Map();
+function textImage(s, font, style, res = 1) {   // style: { fill?, stroke?, lw?, stretch? }
+  const d = (devicePixelRatio || 1) * res, k = [s, font, style.fill, style.stroke, style.lw, style.stretch, d].join('|');
+  let c = textImgs.get(k);
+  if (!c) {
+    if (textImgs.size > 400) textImgs.clear();
+    const g0 = document.createElement('canvas').getContext('2d');
+    g0.font = font; if (style.stretch) g0.fontStretch = style.stretch;
+    const m = g0.measureText(s), lw = style.lw || 0, pad = Math.ceil(lw) + 2;
+    const asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent;
+    c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil((m.width + pad * 2) * d)); c.height = Math.max(1, Math.ceil((asc + desc + pad * 2) * d));
+    const g = c.getContext('2d');
+    g.scale(d, d); g.font = font; if (style.stretch) g.fontStretch = style.stretch;
+    g.lineJoin = 'round'; g.textBaseline = 'alphabetic';
+    if (style.stroke) { g.lineWidth = lw; g.strokeStyle = style.stroke; g.strokeText(s, pad, pad + asc); }
+    if (style.fill) { g.fillStyle = style.fill; g.fillText(s, pad, pad + asc); }
+    c.meta = { pad, asc, desc, w: m.width, d };
+    textImgs.set(k, c);
+  }
+  return c;
+}
+function drawText(c, x, y, align = 'left', baseline = 'alphabetic') {   // like fillText(s, x, y) for a textImage
+  const { pad, asc, desc, w, d } = c.meta;
+  const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+  const base = baseline === 'middle' ? y + (asc - desc) / 2 : baseline === 'top' ? y + asc : baseline === 'bottom' ? y - desc : y;
+  ctx.drawImage(c, left - pad, base - asc - pad, c.width / d, c.height / d);
+}
+
+// ---------- the mouse: every look reacts to it ----------
+// x/y: where it is; sx/sy: a smoothed follower (what the scene reacts to, so everything springs instead of snapping);
+// presence: 0..1, fades in while the mouse is over the window and recently moved, out when it leaves or rests.
+const mouse = { x: -1, y: -1, sx: -1, sy: -1, speed: 0, at: 0, presence: 0, px: 0, py: 0, tilt: 0, inside: false };
+addEventListener('pointermove', e => {
+  const t = now(), d = Math.max(0.008, t - mouse.at);
+  mouse.speed = mouse.at && t - mouse.at < 0.2 ? Math.min(3000, Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) / d) : 0;
+  if (mouse.sx < 0) { mouse.sx = e.clientX; mouse.sy = e.clientY; }
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.at = t; mouse.inside = true;
+});
+document.addEventListener('pointerleave', () => { mouse.inside = false; });
+addEventListener('blur', () => { mouse.inside = false; });
+function stepMouse() {
+  if (mouse.x < 0) return;
+  const k = ease(0.22);
+  mouse.sx += (mouse.x - mouse.sx) * k; mouse.sy += (mouse.y - mouse.sy) * k;
+  if (now() - mouse.at > 0.1) mouse.speed *= 1 - ease(0.15);
+  const want = mouse.inside && now() - mouse.at < 3 ? 1 : 0;   // rests for 3 s: the lyrics settle back
+  mouse.presence += (want - mouse.presence) * ease(want > mouse.presence ? 0.12 : 0.04);
+  const ox = clamp(mouse.sx / W - 0.5, -0.5, 0.5), oy = clamp(mouse.sy / H - 0.5, -0.5, 0.5);
+  mouse.px = -ox * 28 * mouse.presence; mouse.py = -oy * 20 * mouse.presence;   // the scene leans away a little
+  mouse.tilt = ox * 0.012 * mouse.presence;
+}
+// What's drawn at local (x, y) under the current transform: pushed away from the mouse (in screen pixels, so it
+// works inside rotated or scaled layouts) and gently magnified, as a lens. Returns { dx, dy, s } in local units.
+const NO_WARP = { dx: 0, dy: 0, s: 1, f: 0 };
+function field(x, y, k = 1) {
+  if (mouse.presence < 0.01) return NO_WARP;
+  const m = ctx.getTransform(), d = devicePixelRatio || 1;
+  const sx = (m.a * x + m.c * y + m.e) / d, sy = (m.b * x + m.d * y + m.f) / d;
+  const ex = sx - mouse.sx, ey = sy - mouse.sy, r = Math.hypot(ex, ey), R = 170;
+  if (r > R * 2) return NO_WARP;
+  const f = Math.exp(-(r * r) / (R * R)) * mouse.presence * k;
+  const push = 42 * f * Math.min(1, r / 40) / Math.max(r, 1);   // screen px, away from the mouse
+  const ox = ex * push, oy = ey * push;
+  const a = m.a / d, b = m.b / d, c = m.c / d, e = m.d / d, det = a * e - b * c || 1;
+  return { dx: (e * ox - c * oy) / det, dy: (-b * ox + a * oy) / det, s: 1 + 0.28 * f, f };
+}
+function warp(x, y, k = 1) {   // call inside save(), right before drawing something centered on (x, y)
+  const w = field(x, y, k);
+  if (w === NO_WARP) return w;
+  ctx.translate(x + w.dx, y + w.dy); ctx.scale(w.s, w.s); ctx.translate(-x, -y);
+  return w;
+}
+// Backgrounds drawn at a smaller depth move less with the mouse than the lyrics: depth 0 = fixed, 1 = with the text.
+function parallax(depth) { ctx.translate(-mouse.px * (1 - depth), -mouse.py * (1 - depth)); }
 
 // Seeded randomness, so a phrase gets the same layout every time it's shown (e.g. after seeking back).
 function hash(s) { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
@@ -253,23 +388,36 @@ function setAccent(c) {
   if (c && c !== setAccent.last) document.documentElement.style.setProperty('--accent', setAccent.last = c);
 }
 
-function frame() {
+let lastTs = 0;
+function frame(ts) {
+  dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
   const T = now(), lk = setLook(look < 0 ? 0 : look);
+  stepMouse(); stepNotch(lk);
   if (lk.pre) lk.pre(T);                                       // may snapshot this frame for a crossfade
   if (cv.width !== Math.round(innerWidth * (devicePixelRatio || 1))) resize();   // moved to a screen with other scaling
   ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.shadowBlur = 0;
   ctx.clearRect(0, 0, W, H);
-  TOP += ((view === 'both' ? 150 : 40) - TOP) * 0.05;          // smooth slide when the layout changes
-  sceneFade += ((view === 'cover' ? 0 : 1) - sceneFade) * 0.06;
+  const topWant = view === 'both' ? 150 : 40;
+  TOP += (topWant - TOP) * ease(0.05);                          // smooth slide when the layout changes
+  if (Math.abs(topWant - TOP) < 0.3) TOP = topWant;              // land exactly: layouts are rebuilt while it moves
+  sceneFade += ((view === 'cover' ? 0 : 1) - sceneFade) * ease(0.06);
   if (W >= 300 && H >= TOP + 150) {                            // minimized or tiny: wait until there's room
-    ctx.save(); lk.frame(T); ctx.restore();
+    ctx.save();
+    if (mouse.presence > 0.001) {   // the whole scene leans with the mouse; slight overscan so no edge shows
+      const s = 1 + 0.035 * mouse.presence;
+      ctx.translate(W / 2 + mouse.px, H / 2 + mouse.py); ctx.rotate(mouse.tilt); ctx.scale(s, s); ctx.translate(-W / 2, -H / 2);
+    }
+    lk.frame(T);
+    ctx.restore();
+    if (lk.overlay) { ctx.save(); lk.overlay(T); ctx.restore(); }   // screen-fixed extras (the border light)
   }
   if (T - ghostAt < 0.8) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1 - (T - ghostAt) / 0.8; ctx.drawImage(ghost, 0, 0);
     ctx.restore();
   }
+  drawNotch();
   requestAnimationFrame(frame);
 }
 
@@ -351,9 +499,52 @@ function pickLook(i) {   // -1 = mix
   if (i >= 0) { lookSaved = i; setLook(i); }   // the old look crossfades into the new one
   api.set_lock(i); markNotch();
 }
+// The notch's motion: a spring stepped every frame (no CSS size transitions, no layout reads while drawing).
+// The border light reads the same numbers to dip around it (notchShape).
+const notch = { w: 180, h: 26, r: 16, y: 0, vw: 0, vh: 0, vr: 0, vy: 0, open: false, away: false, idleAt: now(),
+                openW: 780, openH: 110 };
+function measureNotch() {   // the open panel's size: measured only when its contents change, never per frame
+  notch.openW = Math.min(780, innerWidth * 0.96);
+  $('#notch').style.setProperty('--open-w', notch.openW + 'px');
+  notch.openH = Math.ceil($('#notch .in').offsetHeight);
+}
+addEventListener('resize', measureNotch);
+function stepNotch(lk) {
+  const t = now();
+  if (!notch.open && !notch.away && t - notch.idleAt > 5    // idle 5 s: hide, but let the border light finish going
+      && (!(lk.busyNotch && lk.busyNotch()) || t - notch.idleAt > 6.5)) notch.away = true;   // round it first
+  const th = notch.open ? notch.openH : 26;
+  const want = { w: notch.open ? notch.openW : 180, h: th, r: notch.open ? 30 : 16, y: notch.away ? -(th + 14) : 0 };
+  for (let rem = dt; rem > 1e-4;) {   // a slightly bouncy spring, in small steps so it is the same at any frame rate
+    const h = Math.min(rem, 1 / 240); rem -= h;
+    for (const p of ['w', 'h', 'r', 'y']) {
+      const v = 'v' + p;
+      notch[v] += ((want[p] - notch[p]) * 230 - notch[v] * 26) * h;
+      notch[p] += notch[v] * h;
+    }
+  }
+}
+function drawNotch() {   // the black shape itself, on top of everything in the canvas
+  const s = notchShape();
+  if (!s) return;
+  ctx.save(); ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.roundRect(s.x0, notch.y - 2, s.x1 - s.x0, s.y1 - notch.y + 2, [0, 0, s.rb, s.rb]); ctx.fill();
+  ctx.restore();
+}
+function setNotchOpen(open) {
+  if (open === notch.open) return;
+  notch.open = open; if (!open) notch.idleAt = now();
+  $('#notch').classList.toggle('open', open); cursorEl.classList.toggle('big', open);
+}
+function notchShape() {   // the notch as the border light sees it, or null when it's slid away
+  const y1 = notch.y + notch.h;
+  if (y1 < 16) return null;
+  return { x0: W / 2 - notch.w / 2, x1: W / 2 + notch.w / 2, y1, rb: Math.max(0, Math.min(notch.r, notch.h / 2, notch.w / 2)) };
+}
 function markNotch() {
-  const id = LOOKS[look] && LOOKS[look].id;
-  $('#notch').classList.toggle('colors', id === 'constellation');
+  const id = LOOKS[look] && LOOKS[look].id, colors = id === 'constellation';
+  if (colors !== $('#notch').classList.contains('colors')) { $('#notch').classList.toggle('colors', colors); measureNotch(); }
   document.querySelectorAll('#looks .chip').forEach(el => {
     const i = +el.dataset.i;
     el.classList.toggle('on', i === lockNow || (i === -1 && lockNow < 0));
@@ -402,6 +593,20 @@ addEventListener('keydown', e => {
 <script>
 resize();
 buildNotch();
+measureNotch();
+const cursorEl = $('#cursor');
+let cursorTimer;
+addEventListener('pointermove', e => {   // the glow cursor follows straight from the event (lowest lag), fades when still
+  cursorEl.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+  cursorEl.classList.add('on');
+  clearTimeout(cursorTimer); cursorTimer = setTimeout(() => cursorEl.classList.remove('on'), 2000);
+  notch.idleAt = now(); notch.away = false;   // any movement brings the notch back
+});
+addEventListener('pointermove', e => {   // hovering the notch's drawn shape opens it; leaving it closes it
+  const s = notchShape(), m = notch.open ? 10 : 0;
+  setNotchOpen(!!s && e.clientX > s.x0 - m && e.clientX < s.x1 + m && e.clientY < s.y1 + m);
+});
+document.addEventListener('pointerleave', () => setNotchOpen(false));
 // Start drawing once the fonts are in, so the first layouts are measured with the real lettering.
 Promise.race([
   Promise.all(['900 40px Archivo', 'italic 900 40px Archivo', '40px "League Gothic"', '40px "Alfa Slab One"',

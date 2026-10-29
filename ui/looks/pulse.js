@@ -16,7 +16,7 @@
   let mix = 0;   // 0 = light pink scene, 1 = dark scene
   let grainL, grainD;
   function background(T, dark) {
-    mix += ((dark ? 1 : 0) - mix) * 0.05;
+    mix += ((dark ? 1 : 0) - mix) * ease(0.05);
     bx.globalCompositeOperation = 'source-over';
     bx.fillStyle = css(mixc('#F27FBA', '#1A0A12', mix)); bx.fillRect(0, 0, 240, 135);
     const blobs = [[0.22, 0.5, 0.55, '#FF0A84', '#7A1446'], [0.78, 0.28, 0.5, '#FFF6FA', '#3A1426'],
@@ -29,8 +29,8 @@
       g.addColorStop(0, css(c, 0.95)); g.addColorStop(1, css(c, 0));
       bx.fillStyle = g; bx.fillRect(0, 0, 240, 135);
     });
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(blob, 0, 0, W, H);
+    ctx.imageSmoothingQuality = 'low';   // plain bilinear: 'high' rebuilds mipmaps of this image every frame, and soft blobs don't need it
+    ctx.save(); parallax(0.3); ctx.drawImage(blob, -20, -20, W + 40, H + 40); ctx.restore();   // far away: moves least
   }
   function grain() {
     grainL = grainL || ctx.createPattern(noiseTile(220, true, 0.55), 'repeat');
@@ -50,6 +50,9 @@
     }), 0, 0, W, H);
   }
   const ink = () => css(mixc(MAROON, '#FFFFFF', mix));   // text that reads on the current background
+  const inkQ = () => css(mixc(MAROON, '#FFFFFF', Math.round(mix * 8) / 8));   // the same in 9 steps, for cached outlines
+  const fontStr = (px, it, wt = 900) => `${it ? 'italic ' : ''}${wt} ${px}px Archivo`;
+  const outline = (s, px, it, color, lw, wt) => textImage(s, fontStr(px, it, wt), { stroke: color, lw, stretch: 'expanded' });
 
   // ---------- layouts ----------
   // Every layout is a list of word items {s, wd, x, y, px, it, fill, outline}; x is the left edge, y the baseline.
@@ -160,30 +163,33 @@
     for (const it of sc.L.items) {
       const p = sung(it.wd, t, 0.12), q = easeOut(sung(it.wd, t, 0.35));
       const appear = easeOut((T - sc.at) / 0.35);
-      font(it.px, it.it);
-      ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
-      if (it.big && p > 0) {   // big word: lands with a short blur-in and settle
-        const e = clamp((t - it.wd.t) / 0.3, 0, 1), sc2 = 1 + 0.12 * (1 - easeOut(e));
-        ctx.save();
-        ctx.translate(it.x + it.w / 2, it.y - it.px * 0.36); ctx.scale(sc2, sc2); ctx.translate(-it.x - it.w / 2, -it.y + it.px * 0.36);
-        if (e < 1) ctx.filter = `blur(${(1 - e) * 10}px)`;
-        ctx.globalAlpha = alphaAll * p; ctx.fillStyle = fillFor(it, 1); ctx.fillText(it.s, it.x, it.y);
-        ctx.restore();
-        continue;
-      }
-      // ghost outline until sung, then fill slides in
-      ctx.lineWidth = Math.max(1, it.px / 70);
-      ctx.strokeStyle = it.fill === 'white' ? 'rgba(255,255,255,0.8)' : ink();
-      ctx.globalAlpha = alphaAll * appear * (it.outline ? 0.9 : 0.75 * (1 - p));
-      ctx.strokeText(it.s, it.x, it.y);
-      if (p > 0 && !it.outline) {
-        ctx.globalAlpha = alphaAll * p;
-        ctx.fillStyle = fillFor(it, 1);
-        ctx.fillText(it.s, it.x - (1 - q) * 22, it.y);
-      } else if (p > 0) {   // outline rows light up instead of filling
-        ctx.globalAlpha = alphaAll * p; ctx.lineWidth = Math.max(1.5, it.px / 45);
-        ctx.strokeStyle = mix > 0.5 ? '#FFFFFF' : MAROON; ctx.strokeText(it.s, it.x, it.y);
-      }
+      ctx.save(); warp(it.x + it.w / 2, it.y - it.px * 0.36);   // pushed aside and magnified by the mouse
+      drawItem(it, p, q, appear, t, alphaAll);
+      ctx.restore();
+    }
+  }
+  function drawItem(it, p, q, appear, t, alphaAll) {
+    font(it.px, it.it);
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    if (it.big && p > 0) {   // big word: lands with a quick fade-in and settle
+      const e = clamp((t - it.wd.t) / 0.3, 0, 1), sc2 = 1 + 0.12 * (1 - easeOut(e));
+      ctx.save();
+      ctx.translate(it.x + it.w / 2, it.y - it.px * 0.36); ctx.scale(sc2, sc2); ctx.translate(-it.x - it.w / 2, -it.y + it.px * 0.36);
+      ctx.globalAlpha = alphaAll * p * (0.35 + 0.65 * easeOut(e)); ctx.fillStyle = fillFor(it, 1); ctx.fillText(it.s, it.x, it.y);
+      ctx.restore();
+      return;
+    }
+    // ghost outline until sung, then fill slides in
+    ctx.globalAlpha = alphaAll * appear * (it.outline ? 0.9 : 0.75 * (1 - p));
+    if (ctx.globalAlpha > 0.004)
+      drawText(outline(it.s, it.px, it.it, it.fill === 'white' ? 'rgba(255,255,255,0.8)' : inkQ(), Math.max(1, it.px / 70)), it.x, it.y);
+    if (p > 0 && !it.outline) {
+      ctx.globalAlpha = alphaAll * p;
+      ctx.fillStyle = fillFor(it, 1);
+      ctx.fillText(it.s, it.x - (1 - q) * 22, it.y);
+    } else if (p > 0) {   // outline rows light up instead of filling
+      ctx.globalAlpha = alphaAll * p;
+      drawText(outline(it.s, it.px, it.it, mix > 0.5 ? '#FFFFFF' : MAROON, Math.max(1.5, it.px / 45)), it.x, it.y);
     }
   }
 
@@ -195,8 +201,7 @@
       if (i === 2) continue;
       const d = Math.abs(i - 2), drift = (i % 2 ? 1 : -1) * age * 26;
       ctx.globalAlpha = a * easeOut((age - d * 0.06) / 0.3) * (d === 1 ? 0.7 : 0.4);
-      ctx.strokeStyle = ink();
-      ctx.strokeText(E.s, E.x0 + drift, E.y0 + i * E.px * 1.02);
+      drawText(outline(E.s, E.px, false, inkQ(), Math.max(1, E.px / 70)), E.x0 + drift, E.y0 + i * E.px * 1.02);
     }
   }
 
@@ -209,7 +214,7 @@
       const y = S.y + (i + 0.5) * S.h / rows, dir = i % 2 ? 1 : -1, x = -(((age * 40 * dir) % Sp.unitW) + Sp.unitW) % Sp.unitW - Sp.unitW;
       ctx.globalAlpha = a * 0.75;
       if (i % 2) { ctx.fillStyle = mix > 0.5 ? 'rgba(255,255,255,0.85)' : MAROON; ctx.fillText(Sp.rowsText, x, y); }
-      else { ctx.strokeStyle = ink(); ctx.strokeText(Sp.rowsText, x, y); }
+      else drawText(textImage(Sp.rowsText, fontStr(Sp.px, false), { stroke: inkQ(), lw: 1.2, stretch: 'expanded' }), x, y, 'left', 'middle');
     }
     // the ball
     const R = Sp.R * backOut(age / 0.5), cx = S.cx, cy = S.cy;
@@ -228,7 +233,7 @@
       for (const ch of band.chars) {
         const lon = spin + ch.at / rr, cl = Math.cos(lon);
         if (cl < 0.06) continue;
-        ctx.setTransform(M); ctx.translate(cx + rr * Math.sin(lon) * k, cy + y * k); ctx.scale(cl, 1);
+        ctx.setTransform(M); ctx.translate(cx + rr * Math.sin(lon) * k, cy + y * k); ctx.scale(cl, 1); warp(0, 0, 0.8);
         const lit = b === 2 && sung(ch.wd, t) > 0;
         ctx.globalAlpha = a * (0.35 + 0.65 * cl);
         if (b === 2 && !lit) ctx.strokeText(ch.c, 0, 0);
@@ -257,7 +262,7 @@
     ctx.lineWidth = 1.6; ctx.strokeStyle = ink();
     ctx.globalAlpha = 0.5 * sceneFade * easeOut((T - sc.at) / 0.6);
     const drift = Math.sin(T * 0.25) * 14;
-    [...g].forEach((c, i) => ctx.strokeText(c, x, (i ? H * 0.82 : H * 0.18) + drift));
+    [...g].forEach((c, i) => drawText(outline(c, px, false, inkQ(), 1.6), x, (i ? H * 0.82 : H * 0.18) + drift, 'center', 'middle'));
   }
 
   function drawEdges(sc, T, a) {
@@ -297,7 +302,7 @@
     for (let i = 0; i < 4; i++) {
       ctx.globalAlpha = a * easeOut((age - i * 0.12) / 0.4) * (i ? 0.85 - i * 0.18 : 1);
       if (i === 0) { ctx.fillStyle = LILAC; ctx.fillText(L.name, S.cx, y0); }
-      else { ctx.strokeStyle = LILAC; ctx.lineWidth = Math.max(1, L.px / 60); ctx.strokeText(L.name, S.cx, y0 + i * L.px * 0.92); }
+      else drawText(outline(L.name, L.px, false, LILAC, Math.max(1, L.px / 60)), S.cx, y0 + i * L.px * 0.92, 'center');
     }
     font(clamp(W * 0.011, 11, 20), false, 800); ctx.letterSpacing = '0.06em';
     ctx.globalAlpha = a * easeOut((age - 0.5) / 0.4); ctx.fillStyle = LILAC;
@@ -354,8 +359,8 @@
         drawScene(sc, t, T, a); ctx.restore();
       }
     } else {
-      ctx.save(); ctx.filter = `blur(${p * 18}px)`; ctx.translate(-p * 80, 0);
-      drawScene(sc, t, T, a); ctx.restore();
+      ctx.save(); ctx.translate(-p * 80, 0); drawScene(sc, t, T, a); ctx.restore();   // slides off with a faint smear
+      ctx.save(); ctx.translate(-p * 140, 0); drawScene(sc, t, T, a * 0.35 * p); ctx.restore();
     }
   }
 

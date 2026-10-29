@@ -32,7 +32,9 @@ python app.py --demo 15    # demo with the first song in songs.txt, starting at 
 
 Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anywhere.
 
-**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (a new look every song), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered.
+**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (a new look every song), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
+
+**The mouse:** every look reacts to it. Words and stars near the cursor are pushed aside and magnified, then spring back; the scene leans with it; the edge light bends toward it, ripples when you sweep past and races to meet it. Drawing keeps pace with the screen's refresh rate (180 Hz included).
 
 ## Keys
 

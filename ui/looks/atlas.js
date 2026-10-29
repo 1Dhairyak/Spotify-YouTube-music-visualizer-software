@@ -30,17 +30,24 @@
   function sky(T, tone, a = 1) {
     const c = SKY[tone];
     ctx.globalAlpha = a;
+    ctx.save(); parallax(0.2);   // the sky is far away: it barely moves with the mouse
     ctx.drawImage(layer('atlas-sky-' + tone, g => {
       const gr = g.createRadialGradient(W * 0.5, H * 0.45, 0, W * 0.5, H * 0.45, Math.hypot(W, H) * 0.6);
       gr.addColorStop(0, c[0]); gr.addColorStop(0.55, c[1]); gr.addColorStop(1, c[2]);
       g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    }), 0, 0, W, H);
+    }), -30, -30, W + 60, H + 60);
+    ctx.restore();
     const dt = Math.min(0.05, T - lastT); lastT = T;
     ctx.fillStyle = '#E6FFF8';
     for (const d of dust) {   // drifting specks that twinkle
       d.x = (d.x + d.vx * dt * 10 + 1) % 1; d.y = (d.y + d.vy * dt * 10 + 1) % 1;
       ctx.globalAlpha = a * (0.25 + 0.45 * (0.5 + 0.5 * Math.sin(T * 1.7 + d.ph)));
-      ctx.fillRect(d.x * W, d.y * H, d.s, d.s);
+      let x = d.x * W, y = d.y * H;
+      if (mouse.presence > 0.01) {   // specks near the mouse swirl around it
+        const ex = x - mouse.sx, ey = y - mouse.sy, r2 = ex * ex + ey * ey, f = Math.exp(-r2 / 26000) * mouse.presence;
+        if (f > 0.01) { x += (-ey * 0.5 + ex * 0.35) * f; y += (ex * 0.5 + ey * 0.35) * f; }
+      }
+      ctx.fillRect(x, y, d.s, d.s);
     }
     ctx.globalAlpha = 1;
   }
@@ -183,7 +190,7 @@
         if (p > 0) {   // letters arrive on a wave that settles
           const amp = px * 0.22 * Math.exp(-Math.max(0, age) * 2.2);
           const dy = Math.sin(i * 0.6 - age * 7) * amp, rot = Math.cos(i * 0.6 - age * 7) * amp / px * 0.6;
-          ctx.save(); ctx.translate(cx, y + dy); ctx.rotate(rot);
+          ctx.save(); warp(cx + w / 2, y + dy - px * 0.35); ctx.translate(cx, y + dy); ctx.rotate(rot);
           ctx.globalAlpha = a * p; ctx.fillStyle = color; ctx.fillText(ch, 0, 0); ctx.restore();
         }
         cx += w; i++;
@@ -199,10 +206,10 @@
       const w = ctx.measureText(ch).width, sc = E[i] || { dx: 0, dy: 0, rot: 0, d: 0 };
       const p = easeOut((t - t0 - sc.d + 0.1) / 0.55);
       if (p > 0) {   // each letter flies in from its own scattered spot
-        ctx.save(); ctx.translate(cx + w / 2 + sc.dx * (1 - p), y + sc.dy * (1 - p)); ctx.rotate(sc.rot * (1 - p));
+        ctx.save(); warp(cx + w / 2, y - px * 0.35); ctx.translate(cx + w / 2 + sc.dx * (1 - p), y + sc.dy * (1 - p)); ctx.rotate(sc.rot * (1 - p));
         ctx.scale(0.4 + 0.6 * p, 0.4 + 0.6 * p);
         ctx.globalAlpha = a * clamp(p * 1.6, 0, 1); ctx.fillStyle = fill;
-        if (style === 'candy') { ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowOffsetY = 3; ctx.shadowBlur = 4; }
+        if (style === 'candy') { const f0 = ctx.fillStyle; ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillText(ch, -w / 2 + 1, 3); ctx.fillStyle = f0; }
         ctx.fillText(ch, -w / 2, 0); ctx.restore();
       }
       cx += w;
@@ -226,18 +233,19 @@
     let x = -L.len / 2;
     for (const wd of L.words) {
       const s = caps(wd.w), w = ctx.measureText(s).width, p = sung(wd, t, 0.2);
+      ctx.save(); warp(x + w / 2, 0);   // road words are pushed aside and magnified by the mouse too
       ctx.globalAlpha = a * (0.45 + 0.55 * p);
-      ctx.lineWidth = 7; ctx.strokeStyle = p > 0 ? '#FFFFFF' : '#3FBF9F'; ctx.strokeText(s, x, 0);
-      ctx.fillStyle = p > 0 ? '#2FA88A' : '#16302A'; ctx.fillText(s, x, 0);
+      drawText(textImage(s, road(L.px), p > 0 ? { stroke: '#FFFFFF', lw: 7, fill: '#2FA88A' } : { stroke: '#3FBF9F', lw: 7, fill: '#16302A' }, 2), x, 0, 'left', 'middle');
       if (wd.end && p > 0) {   // a map pin drops onto the line-end word
         const e = clamp((t - wd.t) / 0.5, 0, 1), py = -L.px * 1.1 - (1 - backOut(e)) * 260;
         ctx.save(); ctx.translate(x + w / 2, py); ctx.globalAlpha = a * clamp(e * 3, 0, 1);
-        ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 6;
-        ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(0, -26, 26, Math.PI * 0.85, Math.PI * 2.15);
-        ctx.lineTo(0, 22); ctx.closePath(); ctx.fill();
-        ctx.shadowBlur = 0; ctx.shadowOffsetY = 0; ctx.fillStyle = '#2FA88A'; ctx.beginPath(); ctx.arc(0, -26, 10, 0, 6.29); ctx.fill();
+        const pin = () => { ctx.beginPath(); ctx.arc(0, -26, 26, Math.PI * 0.85, Math.PI * 2.15); ctx.lineTo(0, 22); ctx.closePath(); };
+        ctx.save(); ctx.translate(3, 7); ctx.globalAlpha *= 0.3; ctx.fillStyle = '#000'; pin(); ctx.fill(); ctx.restore();   // its shadow
+        ctx.fillStyle = '#FFFFFF'; pin(); ctx.fill();
+        ctx.fillStyle = '#2FA88A'; ctx.beginPath(); ctx.arc(0, -26, 10, 0, 6.29); ctx.fill();
         ctx.restore();
       }
+      ctx.restore();
       x += w + ctx.measureText(' ').width;
     }
     done();
@@ -270,8 +278,8 @@
         const f = next ? clamp((d.t - L.words[i].t) / (next.t - L.words[i].t), 0, 1) : 0;
         const c = next ? lerp(L.centers[i], L.centers[i + 1], f) : L.centers[i];
         L.cam.x = L.mx + Math.cos(L.ang) * c; L.cam.y = L.my + Math.sin(L.ang) * c;
-        cam.x = lerp(cam.x, L.cam.x, 0.06); cam.y = lerp(cam.y, L.cam.y, 0.06);
-        cam.rot = angLerp(cam.rot, L.cam.rot, 0.045); cam.z = lerp(cam.z, L.cam.z, 0.05);
+        cam.x = lerp(cam.x, L.cam.x, ease(0.06)); cam.y = lerp(cam.y, L.cam.y, ease(0.06));
+        cam.rot = angLerp(cam.rot, L.cam.rot, ease(0.045)); cam.z = lerp(cam.z, L.cam.z, ease(0.05));
       }
       const p = clamp((T - kindAt) / 0.8, 0, 1);
       const drawKind = (k, alpha, scale) => {
@@ -289,7 +297,7 @@
       }
       if (d.prev) {
         const q = (T - d.prev.out) / this.exit;
-        ctx.save(); ctx.filter = `blur(${q * 12}px)`; ctx.translate(0, q * 24);
+        ctx.save(); ctx.translate(0, q * 30);   // sinks and fades out
         drawScene(d.prev, d.t, T, sceneFade * (1 - q)); ctx.restore();
       }
       drawScene(cur, d.t, T, sceneFade);

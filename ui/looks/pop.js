@@ -203,12 +203,13 @@
     if (p <= 0) return;
     ctx.font = it.font; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     if (it.script) {   // handwriting: written on left to right
-      ctx.save(); ctx.beginPath(); ctx.rect(it.x - 10, it.y - it.h * 1.2, (it.w + 20) * clamp((t - it.wd.t) / 0.4, 0, 1), it.h * 1.8); ctx.clip();
+      ctx.save(); warp(it.x + it.w / 2, it.y - it.h / 2); ctx.beginPath(); ctx.rect(it.x - 10, it.y - it.h * 1.2, (it.w + 20) * clamp((t - it.wd.t) / 0.4, 0, 1), it.h * 1.8); ctx.clip();
       ctx.globalAlpha = a; ctx.fillStyle = it.color; ctx.fillText(it.s, it.x, it.y); ctx.restore();
       return;
     }
     const s = backOut(p) * 0.65 + 0.35, cx = it.x + it.w / 2, cy = it.y - it.h / 2;
-    ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
+    ctx.save(); warp(cx, cy);   // pushed aside and magnified by the mouse
+    ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
     ctx.globalAlpha = a * clamp(p * 2, 0, 1);
     if (it.ext) {   // hatched 3D drop: the word stamped down-right, filled with diagonal stripes
       const color = ['#FFF3D6', '#FFF6DA', '#FFF8E1'].includes(it.color) ? currentSch.sh : it.color;
@@ -241,13 +242,12 @@
   function drawRing(sc, t, T, a) {
     const L = sc.L, age = T - sc.at, e = easeOut(age / 0.45);
     ctx.save(); ctx.translate(L.cx, L.cy);
-    // circle pops in blurred, then sharpens
-    ctx.globalAlpha = a; if (e < 1) ctx.filter = `blur(${(1 - e) * 10}px)`;
+    // circle pops in, fading up as it grows
+    ctx.globalAlpha = a * (0.3 + 0.7 * e);
     const R = L.R * (0.6 + 0.4 * backOut(age / 0.45));
     ctx.fillStyle = L.circle[0]; ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.29); ctx.fill();
     const rot = T * 0.9;
     ctx.fillStyle = L.circle[1]; ctx.beginPath(); ctx.arc(0, 0, R * 0.9, rot, rot + 2.2); ctx.lineTo(0, 0); ctx.fill();
-    ctx.filter = 'none';
     // sweeping arcs
     ctx.strokeStyle = L.color; ctx.lineCap = 'round';
     [[1.62, 0.9, 1.4], [1.72, -0.7, 0.9], [1.56, 0.5, 1.1]].forEach(([rr, sp, len], i) => {
@@ -260,7 +260,7 @@
     for (const lt of L.letters) {
       const p = sung(lt.wd, t, 0.2);
       if (p <= 0) continue;
-      ctx.save(); ctx.rotate(lt.a); ctx.translate(L.rad + (1 - p) * 20, 0); ctx.rotate(Math.PI / 2);
+      ctx.save(); ctx.rotate(lt.a); ctx.translate(L.rad + (1 - p) * 20, 0); ctx.rotate(Math.PI / 2); warp(0, 0);
       ctx.globalAlpha = a * p; ctx.fillText(lt.c, 0, 0); ctx.restore();
     }
     ctx.restore();
@@ -315,7 +315,7 @@
       if (d.prev) {   // the old block slides out left, stretching
         const p = (T - d.prev.out) / this.exit;
         currentSch = d.prev.L.sch;
-        ctx.save(); ctx.translate(-p * p * W * 0.4, 0); ctx.filter = `blur(${p * 8}px)`;
+        ctx.save(); ctx.translate(-p * p * W * 0.4, 0);   // the stretch reads as speed, no blur needed
         ctx.translate(W / 2, H / 2); ctx.scale(1 + p * 0.5, 1); ctx.translate(-W / 2, -H / 2);
         drawScene(d.prev, d.t, T, sceneFade * (1 - p)); ctx.restore();
         currentSch = cur.L.sch;

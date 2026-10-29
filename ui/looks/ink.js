@@ -86,10 +86,12 @@
   }
 
   // A word in brush caps: grey until sung, then the ink is "written" over it left to right.
+  let inGroup = false;   // drawing words inside a bubble: the bubble reacts to the mouse as a whole
   function word(s, x, y, px, wd, t, T, dark, a, seed, center) {
     const w = tw(s, px), x0 = center ? x - w / 2 : x, j = rng(seed + boilAt(T));
     const rot = (j() - 0.5) * 0.02, dx = (j() - 0.5) * 1.2, dy = (j() - 0.5) * 1.2;
-    ctx.save(); ctx.translate(x0 + dx, y + dy); ctx.rotate(rot); ctx.scale(SQ, 1);
+    ctx.save(); if (!inGroup) warp(x0 + w / 2, y - px * 0.35);   // pushed aside and magnified by the mouse
+    ctx.translate(x0 + dx, y + dy); ctx.rotate(rot); ctx.scale(SQ, 1);
     ctx.font = pm(px); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     const p = wd ? clamp((t - wd.t) / 0.22, 0, 1) : 1;
     ctx.globalAlpha = a; ctx.fillStyle = grey(dark); if (p < 1) ctx.fillText(s, 0, 0);
@@ -186,18 +188,20 @@
     const curIdx = Math.max(0, L.bubbles.findLastIndex(b => b.g[0].t <= t + 0.05));
     const target = L.width <= W * 0.9 ? -(W - L.width) / 2                       // fits: just centre the row
                                       : clamp(L.bubbles[curIdx].x - W * 0.42, -W * 0.05, L.width - W * 0.95);
-    sc.cam = sc.cam === undefined ? target : lerp(sc.cam, target, 0.06);
+    sc.cam = sc.cam === undefined ? target : lerp(sc.cam, target, ease(0.06));
     ctx.strokeStyle = fg(L.dark);
     L.bubbles.forEach((b, i) => {
       const p = clamp((t - b.g[0].t + 0.05) / 0.35, 0, 1);
       if (p <= 0) return;
       const x = b.x - sc.cam, y = b.y + Math.sin(T * 1.1 + i * 1.7) * 5, k = 0.55 + 0.45 * backOut(p);
-      ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+      ctx.save(); warp(x, y, 1.2); ctx.translate(x, y); ctx.scale(k, k);   // the bubble drifts away from the mouse
       ctx.globalAlpha = a;
       strokePts(circlePts(0, 0, b.rad, b.seed + boilAt(T)), true, p, Math.max(2.2, b.px * 0.07));
       shine(0, 0, b.rad, T, b.seed);
       let wx = -tw(b.s, b.px) / 2;
+      inGroup = true;
       b.g.forEach(wd => { wx += word(caps(wd.w), wx, b.px * 0.36, b.px, wd, t, T, L.dark, a, b.seed + wd.t * 100) + tw(' ', b.px); });
+      inGroup = false;
       ctx.restore();
     });
   }
@@ -260,13 +264,13 @@
       const p = clamp((T - sc.at - 0.15 - i * 0.08) / 0.4, 0, 1);
       if (p <= 0) return;
       const [x, y] = bezier(L.wire, bl.f), rb = L.rb, lit = sung(bl.wd, t, 0.2);
-      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(T * 1.3 + i) * 0.07 + (i % 2 ? 0.05 : -0.05));
+      ctx.save(); warp(x, y, 1.1); ctx.translate(x, y); ctx.rotate(Math.sin(T * 1.3 + i) * 0.07 + (i % 2 ? 0.05 : -0.05));
       ctx.strokeRect(-rb * 0.17, 0, rb * 0.34, rb * 0.32);   // socket
       for (let k = 1; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-rb * 0.17, rb * 0.1 * k); ctx.lineTo(rb * 0.17, rb * 0.1 * k); ctx.stroke(); }
       const cy = rb * 0.32 + rb * 1.05, glass = circlePts(0, cy, rb, bl.seed + bt);
       if (lit > 0) {   // the bulb lights up when its word is sung
+        glowAt(0, cy, rb * 2.1, L.dark ? 'rgb(255,240,180)' : 'rgb(255,230,150)', a * lit * 0.75);   // its glow
         ctx.save(); ctx.globalAlpha = a * lit; ctx.fillStyle = L.dark ? '#FFF7D6' : '#FFFFFF';
-        ctx.shadowColor = L.dark ? 'rgba(255,240,180,0.9)' : 'rgba(255,230,150,0.9)'; ctx.shadowBlur = 40 * lit;
         smoothPath(glass, true); ctx.fill(); ctx.restore();
       }
       ctx.globalAlpha = a;
@@ -331,7 +335,7 @@
     },
     frame(T) {
       const d = direct(this, T), cur = d.cur;
-      background(T, cur.L.dark);
+      ctx.save(); parallax(0.4); background(T, cur.L.dark); ctx.restore();   // paper sits behind the ink
       if (d.prev) {
         const p = (T - d.prev.out) / this.exit;
         ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(1 - p * 0.06, 1 - p * 0.06); ctx.translate(-W / 2, -H / 2);
