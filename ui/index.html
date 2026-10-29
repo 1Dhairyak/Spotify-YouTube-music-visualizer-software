@@ -23,7 +23,12 @@
     padding: 32px 40px; transition: opacity .5s; z-index: 1; }
   header.hidden { opacity: 0; }
   #art { width: 88px; height: 88px; border-radius: 14px; object-fit: cover; box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 22%, transparent); }
-  #title { font-size: 26px; font-weight: 600; line-height: 1.2; }
+  /* The title block stays left of the open notch (and so inside the border light's dip): long titles wrap to a
+     compact block of at most 2 lines instead of running under the notch. 172px = padding + art + gap + margin. */
+  header > div { min-width: 0; max-width: calc((100vw - var(--open-w, 780px)) / 2 - 172px); }
+  #title, #artist { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  #title { font-size: 26px; font-weight: 600; line-height: 1.2; -webkit-line-clamp: 2; }
+  #artist { -webkit-line-clamp: 1; }
   #artist { font-size: 15px; opacity: .6; margin-top: 4px; }
   #title, #artist, #cover .t, #cover .a { transition: color .6s; }
   #status, #toast { position: fixed; left: 0; right: 0; text-align: center; font-size: 14px; z-index: 2; }
@@ -108,6 +113,7 @@ const WIN = +new URLSearchParams(location.search).get('win') || 0;   // 0 = main
 let view = WIN ? 'cover' : 'both';     // both | stars | cover | gone
 document.body.className = 'view-' + view;
 let TOP = 150;         // the lyrics stay below this; slides to 40 when the header moves to the other screen
+let headerH = 0;       // the header's height, kept by a ResizeObserver (no layout reads while drawing)
 let sceneFade = 1;     // lyrics opacity; 0 on the cover screen
 
 const $ = s => document.querySelector(s);
@@ -402,7 +408,7 @@ function frame(ts) {
   ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.shadowBlur = 0;
   ctx.clearRect(0, 0, W, H);
-  const topWant = view === 'both' ? 150 : 40;
+  const topWant = view === 'both' ? Math.max(150, headerH - 16) : 40;   // below a 2-line title too (header has 32px padding)
   TOP += (topWant - TOP) * ease(0.05);                          // smooth slide when the layout changes
   if (Math.abs(topWant - TOP) < 0.3) TOP = topWant;              // land exactly: layouts are rebuilt while it moves
   sceneFade += ((view === 'cover' ? 0 : 1) - sceneFade) * ease(0.06);
@@ -430,10 +436,12 @@ function frame(ts) {
 function showTrack(t) {
   const h = $('header');
   h.classList.add('hidden');
+  // "(with X & Y)" / "(feat. X)" repeat the artist line: dropped so the title fits its corner
+  const title = t.title.replace(/\s*[(\[](with|feat\.?|ft\.?|featuring)\s[^)\]]*[)\]]/gi, '');
   setTimeout(() => {
-    $('#title').textContent = t.title;
+    $('#title').textContent = title;
     $('#artist').textContent = t.artist;
-    $('#cover .t').textContent = t.title;
+    $('#cover .t').textContent = title;
     $('#cover .a').textContent = t.artist;
     for (const img of [$('#art'), $('#cover img')]) {
       img.style.display = t.art ? '' : 'none';
@@ -509,7 +517,7 @@ const notch = { w: 180, h: 26, r: 16, y: 0, vw: 0, vh: 0, vr: 0, vy: 0, open: fa
                 openW: 780, openH: 110 };
 function measureNotch() {   // the open panel's size: measured only when its contents change, never per frame
   notch.openW = Math.min(780, innerWidth * 0.96);
-  $('#notch').style.setProperty('--open-w', notch.openW + 'px');
+  document.documentElement.style.setProperty('--open-w', notch.openW + 'px');   // the notch and the header both use it
   notch.openH = Math.ceil($('#notch .in').offsetHeight);
 }
 addEventListener('resize', measureNotch);
@@ -597,6 +605,7 @@ addEventListener('keydown', e => {
 <script>
 resize();
 buildNotch();
+new ResizeObserver(([e]) => { headerH = e.target.offsetHeight; }).observe($('header'));
 measureNotch();
 const cursorEl = $('#cursor');
 let cursorTimer;
