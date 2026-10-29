@@ -15,7 +15,7 @@ function accent() {
   const from = rgb(PALETTE[(i - 1 + n) % n]), to = rgb(PALETTE[i % n]);
   const f = i ? Math.min(1, (t - i * COLOR_EVERY) / COLOR_FADE) : 1;
   let c = colorPick >= 0 ? rgb(PALETTE[colorPick]) : to.map((v, k) => from[k] + (v - from[k]) * f);
-  const p = easeInOut(Math.min(1, (now() - pickAt) / 1));
+  const p = easeInOut(Math.min(1, (sceneT - pickAt) / 1));
   if (pickFrom && p < 1) c = c.map((v, k) => pickFrom[k] + (v - pickFrom[k]) * p);
   shownRGB = c;
   return `rgb(${c.map(Math.round).join(',')})`;
@@ -42,11 +42,11 @@ function place(wd) {
   let scene = nodes.filter(n => !n.dying);
   let prev = scene[scene.length - 1];
   if (scene.length >= SCENE_MAX || (scene.length >= SCENE && prev.end)) {
-    scene.forEach(n => n.dying = now());
+    scene.forEach(n => n.dying = sceneT);
     scene = []; prev = undefined;
   }
   const st = STYLES[style];
-  const n = Object.assign({ w: wd.w, end: !!wd.end, born: now(), seed: rand(0, 6.28), dying: 0 },
+  const n = Object.assign({ w: wd.w, end: !!wd.end, born: sceneT, seed: rand(0, 6.28), dying: 0 },
                           (st.place || wanderPlace)(scene, prev));
   (st.link || constellationLink)(scene, prev, n);
   nodes.push(n);
@@ -423,7 +423,7 @@ function prismBurst(n) {
   for (let i = 0; i < 12; i++) {
     const t = rand(0, 6.28), v = rand(80, 260);
     shards.push({ x: c.x, y: c.y, vx: Math.cos(t) * v, vy: Math.sin(t) * v, q: rand(5, 14),
-                  rot: rand(0, 6.28), spin: rand(-2, 2), born: now() });
+                  rot: rand(0, 6.28), spin: rand(-2, 2), born: sceneT });
   }
 }
 function prismUnder(T, alpha, P) {
@@ -536,7 +536,7 @@ LOOKS.push({
   busyNotch: () => cometNearNotch,   // the notch stays until the light has gone round it
   poll(s) {
     if (s.style !== savedStyle) styleBase = savedStyle = s.style;   // startup, or set on the other screen
-    if (s.color !== colorPick) { pickFrom = shownRGB; pickAt = now(); colorPick = s.color; }
+    if (s.color !== colorPick) { pickFrom = shownRGB; pickAt = sceneT; colorPick = s.color; }
   },
   key(e) {
     const pick = e.key === 't' || e.key === 'T' ? style + 1 : '123456789'.indexOf(e.key);

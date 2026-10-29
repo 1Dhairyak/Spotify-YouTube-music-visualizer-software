@@ -125,7 +125,8 @@ let api, rev = -1, track = { id: -1, words: [], phrases: [] };
 let clock = { pos: 0, at: performance.now(), playing: false };
 let offset = 0, fs = true;
 
-const now = () => performance.now() / 1000;
+const now = () => performance.now() / 1000;   // real time: the mouse, the notch, crossfades
+let sceneT = 0, rate = 1;   // the looks' clock: runs at a tenth of the speed while the music is paused
 const songTime = () => clock.pos + (clock.playing ? (performance.now() - clock.at) / 1000 : 0) + offset;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -391,8 +392,11 @@ function setAccent(c) {
 let lastTs = 0;
 function frame(ts) {
   dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
-  const T = now(), lk = setLook(look < 0 ? 0 : look);
-  stepMouse(); stepNotch(lk);
+  const lk = setLook(look < 0 ? 0 : look);
+  stepMouse(); stepNotch(lk);                                  // these keep real speed; the looks below get slowed dt
+  rate += ((clock.playing ? 1 : 0.1) - rate) * ease(0.04);
+  dt *= rate; sceneT += dt;
+  const T = sceneT;
   if (lk.pre) lk.pre(T);                                       // may snapshot this frame for a crossfade
   if (cv.width !== Math.round(innerWidth * (devicePixelRatio || 1))) resize();   // moved to a screen with other scaling
   ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
@@ -412,9 +416,9 @@ function frame(ts) {
     ctx.restore();
     if (lk.overlay) { ctx.save(); lk.overlay(T); ctx.restore(); }   // screen-fixed extras (the border light)
   }
-  if (T - ghostAt < 0.8) {
+  if (now() - ghostAt < 0.8) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1 - (T - ghostAt) / 0.8; ctx.drawImage(ghost, 0, 0);
+    ctx.globalAlpha = 1 - (now() - ghostAt) / 0.8; ctx.drawImage(ghost, 0, 0);
     ctx.restore();
   }
   drawNotch();
