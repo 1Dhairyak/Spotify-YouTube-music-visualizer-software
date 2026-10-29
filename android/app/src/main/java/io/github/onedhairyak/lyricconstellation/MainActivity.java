@@ -1,10 +1,10 @@
 package io.github.onedhairyak.lyricconstellation;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -37,6 +37,8 @@ public class MainActivity extends Activity {
         // https origin for the assets, so fonts load and LRCLIB / iTunes answer like they do for a web page
         WebViewAssetLoader assets = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
+        // debug builds only: lets Chrome DevTools (chrome://inspect) look inside the page
+        WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0);
         web = new WebView(this);
         web.setBackgroundColor(0xFF000000);
         WebSettings ws = web.getSettings();
@@ -74,7 +76,7 @@ public class MainActivity extends Activity {
                     .setMessage("Lyric Constellation listens for a few seconds through the microphone to recognize the song "
                             + "playing nearby, then shows its lyrics in time. It only listens while the app is open on screen, "
                             + "and the sound is turned into a fingerprint that is sent to Shazam; no recording is kept.")
-                    .setPositiveButton("Continue", (d, w) -> requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, 1))
+                    .setPositiveButton("Continue", (d, w) -> media.askMic())
                     .setNegativeButton("Not now", null)
                     .show();
         }

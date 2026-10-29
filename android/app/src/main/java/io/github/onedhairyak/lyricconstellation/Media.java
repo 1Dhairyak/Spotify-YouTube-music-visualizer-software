@@ -2,19 +2,33 @@ package io.github.onedhairyak.lyricconstellation;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.net.Uri;
+import android.os.Build;
+import android.os.SystemClock;
+import android.provider.Settings;
 import android.view.KeyEvent;
+import android.view.WindowInsets;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** The page's way to hear what's playing (window.Media): records a few seconds from the microphone, asks Shazam,
@@ -34,6 +48,38 @@ public class Media {
 
     @JavascriptInterface
     public boolean granted() { return granted(ctx); }
+
+    /** Height of the status-bar strip at the top, in CSS px: taps there go to Android, not to the page. */
+    @JavascriptInterface
+    public float topInset() {
+        Activity a = (Activity) ctx;
+        int px = 0;
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsets in = a.getWindow().getDecorView().getRootWindowInsets();
+            if (in != null) px = Math.max(in.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top,
+                                          in.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout()).top);
+        }
+        if (px == 0) {
+            int id = a.getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (id > 0) px = a.getResources().getDimensionPixelSize(id);
+        }
+        return px / a.getResources().getDisplayMetrics().density;
+    }
+
+    /** Asks for the microphone; once Android stops showing the prompt (denied before), opens the app's settings. */
+    @JavascriptInterface
+    public void askMic() {
+        Activity a = (Activity) ctx;
+        a.runOnUiThread(() -> {
+            SharedPreferences prefs = a.getPreferences(Context.MODE_PRIVATE);
+            if (!prefs.getBoolean("askedMic", false) || a.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) {
+                prefs.edit().putBoolean("askedMic", true).apply();
+                a.requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, 1);
+            } else {
+                a.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", a.getPackageName(), null)));
+            }
+        });
+    }
 
     /** Starts one listen unless one is running; the answer arrives later in window.__heard. */
     @JavascriptInterface
@@ -61,6 +107,8 @@ public class Media {
 
     @SuppressLint("MissingPermission")   // checked in listen()
     private short[] record() {
+        File fake = new File(ctx.getFilesDir(), "test-mic.pcm");
+        if ((ctx.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0 && fake.exists()) return fakeRecord(fake);
         int min = AudioRecord.getMinBufferSize(Signature.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         AudioRecord rec = new AudioRecord(MediaRecorder.AudioSource.MIC, Signature.RATE, AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, Math.max(min, Signature.RATE));
@@ -77,6 +125,25 @@ public class Media {
         } finally {
             rec.release();
         }
+    }
+
+    /** Debug builds only, for testing in the emulator (whose mic is the PC's): "hears" files/test-mic.pcm (16 kHz mono
+     *  16-bit) as if it had started playing when the file was written, in real time; past its end there is silence. */
+    private short[] fakeRecord(File f) {
+        short[] pcm = new short[Signature.RATE * SECONDS];
+        long from = (System.currentTimeMillis() - f.lastModified()) * Signature.RATE / 1000;   // samples already "played"
+        try (RandomAccessFile in = new RandomAccessFile(f, "r")) {
+            byte[] b = new byte[pcm.length * 2];
+            if (from * 2 < in.length()) { in.seek(from * 2); in.read(b); }
+            ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(pcm);
+        } catch (IOException e) {
+            return null;
+        }
+        for (long until = System.currentTimeMillis() + SECONDS * 1000L; System.currentTimeMillis() < until; ) {   // take as long as a real recording
+            if (!onScreen) return null;
+            SystemClock.sleep(100);
+        }
+        return pcm;
     }
 
     private static double rms(short[] pcm) {

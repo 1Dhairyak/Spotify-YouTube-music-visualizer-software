@@ -82,7 +82,8 @@
   #notch { position: fixed; top: 0; left: 50%; z-index: 5; width: var(--open-w, 780px); transform: translateX(-50%);
     color: #fff; pointer-events: none; font: 500 13px "Segoe UI Variable Text", "Segoe UI", sans-serif; }
   #notch.open { pointer-events: auto; }
-  #notch .in { display: grid; gap: 12px; padding: 16px 18px; opacity: 0; transition: opacity .18s; }
+  /* --top-inset: the phone's status-bar strip (set by the Android app); the options sit below it, where taps reach us */
+  #notch .in { display: grid; gap: 12px; padding: calc(16px + var(--top-inset, 0px)) 18px 16px; opacity: 0; transition: opacity .18s; }
   #notch.open .in { opacity: 1; transition: opacity .3s .12s; }
   #notch .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
   #notch:not(.colors) #colors { display: none; }
@@ -636,7 +637,8 @@ addEventListener('pointermove', e => {   // hovering the notch's drawn shape ope
   const s = notchShape(), m = notch.open ? 10 : 0;
   setNotchOpen(!!s && e.clientX > s.x0 - m && e.clientX < s.x1 + m && e.clientY < s.y1 + m);
 });
-document.addEventListener('pointerleave', () => setNotchOpen(false));
+// only a mouse leaving the window closes it: a finger "leaves" on every lift, before its tap's click lands on a chip
+document.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') setNotchOpen(false); });
 addEventListener('pointerdown', e => {   // touch has no hover: a tap on the notch (or where it hides) opens it, elsewhere closes
   if (e.pointerType === 'mouse') return;
   notch.idleAt = now(); notch.away = false;

@@ -127,7 +127,7 @@ window.__heard = json => {
 
 const api = {
   async state() {
-    if (!Media.granted()) status = key ? status : 'Allow the microphone so the app can hear which song is playing';
+    if (!Media.granted()) status = key ? status : 'Tap to allow the microphone, so the app can hear which song is playing';
     else if (!listening && Date.now() >= nextListen && Media.listen()) { listening = true; if (!key) status = 'Listening…'; }
     return { rev, pos: songPos(), playing: clock.playing, status, dual: false, stars_on: 0, style: cfg.style,
              look: 0, lock: 0, color: cfg.color };
@@ -139,6 +139,17 @@ const api = {
   async play_pause() { Media.playPause(); },
   async toggle_dual() { return 'One screen'; }, async swap() { return ''; },
 };
+// Without the microphone, a tap anywhere but the notch asks for it again (or opens the app's settings)
+let askedAt = 0;
+addEventListener('pointerup', e => {
+  if (Media.granted() || e.clientY < 60 || (e.target.closest && e.target.closest('#notch')) || Date.now() - askedAt < 1500) return;
+  askedAt = Date.now();
+  Media.askMic();
+});
 window.pywebview = { api };
-addEventListener('load', () => dispatchEvent(new Event('pywebviewready')));
+addEventListener('load', () => {
+  document.documentElement.style.setProperty('--top-inset', Media.topInset() + 'px');   // notch options below the status bar
+  measureNotch();
+  dispatchEvent(new Event('pywebviewready'));
+});
 })();
