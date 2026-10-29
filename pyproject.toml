@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 130
+extend-exclude = ["ui"]
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+ignore = ["E401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

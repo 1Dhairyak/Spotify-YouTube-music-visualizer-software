@@ -1,10 +1,13 @@
-pywebview
-winrt-runtime
-winrt-Windows.Media.Control
-winrt-Windows.Foundation
-winrt-Windows.Foundation.Collections
-winrt-Windows.Storage.Streams
-shazamio
-soundcard
-numpy
-faster-whisper
+# Exact versions, so every install and build is the same. Python 3.10+ on Windows 10/11.
+pywebview==6.2.1
+winrt-runtime==4.0.3
+winrt-Windows.Media.Control==4!10.0.28000.2705
+winrt-Windows.Foundation==4!10.0.28000.2705
+winrt-Windows.Foundation.Collections==4!10.0.28000.2705
+winrt-Windows.Storage.Streams==4!10.0.28000.2705
+SoundCard==0.4.6
+numpy==2.4.4
+# optional: recognize songs by sound when no player reports them
+shazamio==0.9.0
+# optional: learn real word timing by listening (downloads a ~480 MB model on first use)
+faster-whisper==1.2.1

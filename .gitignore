@@ -6,3 +6,4 @@ __pycache__/
 .claude/
 # reference clips
 *.mp4
+*.tmp
