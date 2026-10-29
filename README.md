@@ -8,8 +8,9 @@
 
 **Windows:** unzip, then run `LyricConstellation.exe` (Windows 10/11; if SmartScreen warns about an unknown app, choose *More info → Run anyway*).
 **Android 8+:** open the `.apk` on your phone to install it (allow installing from your browser or files app when asked), then allow
-*notification access* when the app asks: that is how it sees which song is playing. Notifications themselves are never read.
-The Android app has the Constellation look with its color picker; the Windows app has all 5 looks.
+the *microphone*: play a song out loud nearby and the app recognizes it (like Shazam) within about 10 seconds, then
+listens again every 20 seconds to stay in time and notice a new song or a pause. It only listens while it is open on
+screen. The Android app has the Constellation look with its color picker; the Windows app has all 5 looks.
 
 A lightweight Windows app that turns whatever you're playing on Spotify, YouTube Music or YouTube into time-synced kinetic-typography lyrics. It runs full screen and uses a second monitor when you have one.
 
@@ -70,10 +71,10 @@ ruff check .
 
 Build the downloads: `python -m PyInstaller LyricConstellation.spec` (Windows, into `dist/`) and
 `android/gradlew assembleRelease` (Android; the app is `ui/index.html` with only Constellation, plus `android/web/android.js`
-in place of the Python side).
+in place of the Python side, and a Java port of SongRec's Shazam fingerprinting in `Signature.java`).
 
 The code lives in `lyric_constellation/` (`lyrics.py`, `media.py`, `learner.py`, `window.py`); `app.py` just starts it.
-MIT licensed; see [NOTICE.md](NOTICE.md) for fonts, lyrics and services.
+MIT licensed, except the Android app in `android/`, which is GPL-3.0 (it ports SongRec's GPL code); see [NOTICE.md](NOTICE.md).
 
 Each look is one file in `ui/looks/`; delete the file and its `<script>` line in `ui/index.html` to drop it.
 Fonts in `ui/fonts/` are from Google Fonts under the SIL Open Font License (Permanent Marker: Apache 2.0); licence files are next to them.

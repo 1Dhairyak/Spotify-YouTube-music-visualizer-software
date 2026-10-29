@@ -2,7 +2,7 @@
 import json, os, shutil, sys
 from pathlib import Path
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 
 # Read-only app files (ui/, songs.txt): next to the package, or inside the PyInstaller bundle.
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))

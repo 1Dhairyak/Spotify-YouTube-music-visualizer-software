@@ -1,12 +1,12 @@
 package io.github.onedhairyak.lyricconstellation;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -23,6 +23,7 @@ import androidx.webkit.WebViewAssetLoader;
 public class MainActivity extends Activity {
     private static final String HOME = "https://appassets.androidplatform.net/assets/ui/index.html";
     private WebView web;
+    private Media media;
     private boolean asked;
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -41,7 +42,8 @@ public class MainActivity extends Activity {
         WebSettings ws = web.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);   // lyrics cache and the chosen color
-        web.addJavascriptInterface(new Media(this), "Media");
+        media = new Media(this, web);
+        web.addJavascriptInterface(media, "Media");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
@@ -64,13 +66,15 @@ public class MainActivity extends Activity {
         super.onResume();
         immersive();
         web.onResume();
+        media.onScreen = true;
         if (!Media.granted(this) && !asked) {
             asked = true;
             new AlertDialog.Builder(this)
-                    .setTitle("See what's playing")
-                    .setMessage("To show lyrics for Spotify, YouTube Music and other players, allow Lyric Constellation "
-                            + "notification access on the next screen. It only reads what song is playing; notifications are never read.")
-                    .setPositiveButton("Allow", (d, w) -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)))
+                    .setTitle("Hear what's playing")
+                    .setMessage("Lyric Constellation listens for a few seconds through the microphone to recognize the song "
+                            + "playing nearby, then shows its lyrics in time. It only listens while the app is open on screen, "
+                            + "and the sound is turned into a fingerprint that is sent to Shazam; no recording is kept.")
+                    .setPositiveButton("Continue", (d, w) -> requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, 1))
                     .setNegativeButton("Not now", null)
                     .show();
         }
@@ -78,6 +82,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        media.onScreen = false;   // stops any recording in progress
         web.onPause();
         super.onPause();
     }

@@ -1,7 +1,8 @@
 // Lyric Constellation on Android: stands in for app.py behind the same ui/index.html (Constellation only).
-// It reads what the phone is playing from the native `Media` bridge (Android media sessions), fetches synced lyrics
-// from LRCLIB and art from iTunes, and answers the page's pywebview.api calls. The lyric helpers are ports of
-// lyric_constellation/lyrics.py (parse_lrc, word_times, clean); keep them in step with it.
+// It recognizes the song playing nearby through the native `Media` bridge (a few seconds from the microphone,
+// matched by Shazam), fetches synced lyrics from LRCLIB and art from iTunes, and answers the page's pywebview.api
+// calls. The lyric helpers are ports of lyric_constellation/lyrics.py (parse_lrc, word_times, clean); keep them in
+// step with it. GPL-3.0-or-later, like the rest of the Android app (see android/LICENSE).
 window.MOBILE_APP = true;   // index.html: Constellation only, the notch shows just the colors
 (() => {   // own scope: index.html has its own api, track, clock and rev
 
@@ -11,8 +12,8 @@ const WORD_PACE = 0.07;
 const JUNK = /[(\[][^)\]]*\b(official|lyrics?|video|audio|visuali[sz]er|hd|4k|mv|remaster(ed)?)\b[^)\]]*[)\]]/gi;
 const VERSION = /\b(acoustic|live|remix|remaster(ed)?|version|edit|mix|unplugged|lo-?fi|slowed|reverb|sped up|instrumental|reprise|cover)\b/i;
 const FEAT = /\s*[(\[]?\s*\b(ft|feat|featuring)\b\.?[^)\]]*[)\]]?/gi;
-const VIDEO_APPS = /youtube(?!\.music)|chrome|firefox|browser|opera|brave|edge/i;   // titles are "Artist - Song"
-const IDLE = 'Play something on Spotify, YouTube Music or YouTube';
+const IDLE = 'Play a song out loud near your phone';
+const AGAIN = 20000;   // ms between listens once a song is known: keeps the lyrics in time, notices a new song or a pause
 
 function parseLrc(text) {   // LRC text -> sorted [[seconds, line]]; a line may carry several [mm:ss] tags
   const out = [];
@@ -88,34 +89,47 @@ async function coverUrl(artist, title) {   // 1200 px art from iTunes, only from
 
 // ---------- what the page asks for (pywebview.api) ----------
 const cfg = Object.assign({ color: -1, style: 0 }, store.get('cfg'));
-let rev = 0, tid = 0, key = null, status = IDLE, track = { id: 0, title: '', artist: '', art: null, words: [] };
-let clock = { pos: 0, at: Date.now(), playing: false };   // for players that report no position
+let rev = 0, tid = 0, key = null, status = 'Listening…', track = { id: 0, title: '', artist: '', art: null, words: [] };
+let clock = { pos: 0, at: Date.now(), playing: false };
+let listening = false, nextListen = 0, misses = 0;
+const songPos = () => clock.pos + (clock.playing ? (Date.now() - clock.at) / 1000 : 0);
 
 function publish(t, st) { track = { id: tid, ...t }; status = st; rev++; }
 
-async function load(m, id) {
-  const [artist, title] = clean(m.title, m.artist, VIDEO_APPS.test(m.app));
-  publish({ title, artist, art: null, words: [] }, 'Finding lyrics…');
-  const lyrics = title ? await fetchLyrics(artist, title, m.dur) : null;
-  const art = (title && await coverUrl(artist, m.title.replace(JUNK, ''))) || Media.art() || null;
-  if (id !== tid) return;   // the song changed meanwhile
+async function load(h, id) {   // h: what Shazam heard
+  const [artist, title] = clean(h.title, h.artist, false);
+  publish({ title, artist, art: h.art, words: [] }, 'Finding lyrics…');
+  const lyrics = await fetchLyrics(artist, title, null);
+  const art = (await coverUrl(artist, title)) || h.art || null;
+  if (id !== tid) return;   // another song was heard meanwhile
   if (lyrics) publish({ title: lyrics.title, artist: lyrics.artist, art, words: wordTimes(parseLrc(lyrics.lrc)) }, '');
   else publish({ title, artist, art, words: [] }, 'No synced lyrics found for this song');
 }
 
+// Media.listen() answers here: {startedAt, answer?: Shazam's JSON, silent?, error?}
+window.__heard = json => {
+  listening = false;
+  const r = JSON.parse(json), t = r.answer && r.answer.track, m = r.answer && (r.answer.matches || [])[0];
+  if (!t || !m) {   // silence, no match or offline: freeze the words until something is heard again
+    clock = { pos: songPos(), at: Date.now(), playing: false };
+    misses++;
+    if (!key) status = r.error ? "Can't reach the song finder: check the internet connection" : IDLE;
+    nextListen = Date.now() + (key ? AGAIN : Math.min(15000, 2000 * misses));
+    return;
+  }
+  misses = 0;
+  const pos = m.offset + (Date.now() - r.startedAt) / 1000;   // where the song is now
+  if (!clock.playing || Math.abs(pos - songPos()) > 0.4) clock = { pos, at: Date.now(), playing: true };
+  const k = `${t.title}|${t.subtitle}`;
+  if (k !== key) { key = k; tid++; load({ title: t.title, artist: t.subtitle || '', art: (t.images || {}).coverart || null }, tid); }
+  nextListen = Date.now() + AGAIN;
+};
+
 const api = {
   async state() {
-    const m = JSON.parse(Media.state());
-    if (!m.granted) { status = 'Allow notification access so the app can see what is playing'; }
-    else if (!m.title) {
-      if (key) { key = null; tid++; publish({ title: '', artist: '', art: null, words: [] }, IDLE); }
-    } else {
-      const k = `${m.app}|${m.title}|${m.artist}`;
-      if (k !== key) { key = k; tid++; clock = { pos: 0, at: Date.now(), playing: m.playing }; load(m, tid); }
-    }
-    if (m.pos >= 0) clock = { pos: m.pos, at: Date.now(), playing: m.playing };
-    else clock = { pos: clock.pos + (clock.playing ? (Date.now() - clock.at) / 1000 : 0), at: Date.now(), playing: m.playing };
-    return { rev, pos: clock.pos, playing: !!m.playing, status, dual: false, stars_on: 0, style: cfg.style,
+    if (!Media.granted()) status = key ? status : 'Allow the microphone so the app can hear which song is playing';
+    else if (!listening && Date.now() >= nextListen && Media.listen()) { listening = true; if (!key) status = 'Listening…'; }
+    return { rev, pos: songPos(), playing: clock.playing, status, dual: false, stars_on: 0, style: cfg.style,
              look: 0, lock: 0, color: cfg.color };
   },
   async track() { return track; },
