@@ -87,7 +87,7 @@
   /* The cursor: a soft glow in the look's color instead of the arrow; fades after 2 s still */
   html, body, * { cursor: none !important; }
   #cursor { position: fixed; left: 0; top: 0; z-index: 10; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
-    pointer-events: none; opacity: 0; transition: opacity .35s, scale .25s; will-change: transform;
+    pointer-events: none; opacity: 0; transition: opacity .35s, scale .25s; will-change: translate;
     background: radial-gradient(circle, #fff 0 16%, var(--accent) 32%, color-mix(in srgb, var(--accent) 35%, transparent) 50%, transparent 70%); }
   #cursor.on { opacity: .95; }
   #cursor.big { scale: 1.5; }
@@ -597,7 +597,7 @@ measureNotch();
 const cursorEl = $('#cursor');
 let cursorTimer;
 addEventListener('pointermove', e => {   // the glow cursor follows straight from the event (lowest lag), fades when still
-  cursorEl.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+  cursorEl.style.translate = `${e.clientX}px ${e.clientY}px`;   // not transform: `scale` (.big) would scale the offset too
   cursorEl.classList.add('on');
   clearTimeout(cursorTimer); cursorTimer = setTimeout(() => cursorEl.classList.remove('on'), 2000);
   notch.idleAt = now(); notch.away = false;   // any movement brings the notch back
