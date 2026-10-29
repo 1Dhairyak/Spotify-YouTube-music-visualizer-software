@@ -6,7 +6,7 @@
   python app.py --probe     prints what Windows reports for every media session, once a second
   python app.py --selftest  checks the LRC parser, word timing and title cleanup
 """
-import asyncio, base64, io, json, os, re, sys, threading, time, traceback, urllib.error, urllib.parse, urllib.request, wave
+import asyncio, base64, difflib, io, json, os, queue, re, sys, tempfile, threading, time, traceback, urllib.error, urllib.parse, urllib.request, wave
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -54,6 +54,67 @@ def word_times(lines):
     return words
 
 
+def line_spans(lines):
+    """[(seconds, line)] -> [(start, next line's start, index of its first word, word count)], in word_times' order."""
+    out, i = [], 0
+    for k, (t, body) in enumerate(lines):
+        n = len(body.split())
+        out.append((t, lines[k + 1][0] if k + 1 < len(lines) else t + 4.0, i, n))
+        i += n
+    return out
+
+
+def words_for(lyrics):
+    """Lyrics from fetch_lyrics -> words, with the times Learner heard laid over the guesses.
+    Line starts stay as LRCLIB has them; a line sung again (a chorus) borrows what was heard for its twin."""
+    lines = parse_lrc(lyrics["lrc"])
+    words, learned = word_times(lines), lyrics.get("learned")
+    if not learned or WORD_TAG.search(lyrics["lrc"]):
+        return words
+    spans = list(zip(line_spans(lines), (body.lower() for _, body in lines)))
+    twin = {}  # line text -> {word number: seconds after the line starts}
+    for (t, _, i, n), text in spans:
+        for k in range(1, n):
+            if str(i + k) in learned:
+                twin.setdefault(text, {})[k] = learned[str(i + k)] - t
+    for (t, t_next, i, n), text in spans:
+        got = {k: t + v for k, v in twin.get(text, {}).items()}
+        got.update({k: learned[str(i + k)] for k in range(1, n) if str(i + k) in learned})
+        if not got:
+            continue
+        guess = [words[i + k]["t"] for k in range(n)]
+        anchors = sorted({0: t, **got}.items())
+        for k in range(1, n):
+            if k in got:
+                new = got[k]
+            else:  # not heard: keep the guess's spacing between the nearest heard words
+                a = max(x for x in anchors if x[0] < k)
+                b = next((x for x in anchors if x[0] > k), None)
+                new = a[1] + (guess[k] - guess[a[0]]) * ((b[1] - a[1]) / ((guess[b[0]] - guess[a[0]]) or 1) if b else 1)
+            words[i + k]["t"] = round(min(max(new, words[i + k - 1]["t"] + 0.05), t_next - 0.05), 3)
+    return words
+
+
+def match_heard(lines, heard, start, end):
+    """Whisper's words [(song seconds, word)] from start..end -> {word index: seconds} for the lyric words it
+    clearly heard: runs of 2+ words in lyric order, each inside its own line's time."""
+    norm = lambda w: re.sub(r"[^a-z0-9]", "", w.lower())
+    lyr = []  # (token, word index, line start, next line start)
+    for (t, t_next, i, n), (_, body) in zip(line_spans(lines), lines):
+        if t_next > start - 1 and t < end + 1:
+            lyr += [(norm(w), i + k, t, t_next) for k, w in enumerate(body.split())]
+    heard = [(t, norm(w)) for t, w in heard if norm(w)]
+    blocks = difflib.SequenceMatcher(None, [x[0] for x in lyr], [w for _, w in heard], autojunk=False).get_matching_blocks()
+    out, last = {}, -1.0
+    for blk in blocks:
+        if blk.size < 2:  # a lone "you" or "the" matches anywhere
+            continue
+        for (tok, i, t, t_next), (tw, _) in zip(lyr[blk.a:blk.a + blk.size], heard[blk.b:blk.b + blk.size]):
+            if t - 0.3 <= tw < t_next and tw > last:
+                out[i], last = round(tw, 3), tw
+    return out
+
+
 JUNK = re.compile(r"[(\[][^)\]]*\b(official|lyrics?|video|audio|visuali[sz]er|hd|4k|mv|remaster(ed)?)\b[^)\]]*[)\]]", re.I)
 VERSION = re.compile(r"\b(acoustic|live|remix|remaster(ed)?|version|edit|mix|unplugged|lo-?fi|slowed|reverb|"
                      r"sped up|instrumental|reprise|cover)\b", re.I)
@@ -84,31 +145,38 @@ def http_json(url):
 
 
 def fetch_lyrics(artist, title, duration=None):
-    """Synced lyrics from cache/ or LRCLIB -> {"artist", "title", "lrc"} or None."""
+    """Synced lyrics from cache/ or LRCLIB -> {"artist", "title", "lrc", "duration", "learned"?, "file"} or None.
+    A cached copy timed for another version of the song (music video intro, extended mix) is fetched again."""
     f = CACHE / f"{cache_key(artist, title)}.json"
-    if f.exists():
-        return json.loads(f.read_text("utf-8"))
+    cached = json.loads(f.read_text("utf-8")) if f.exists() else None
+    if cached:
+        cached["file"] = str(f)  # where Learner saves what it hears
+    if cached and not (duration and abs((cached.get("duration") or 0) - duration) > 3):
+        return cached
     q = {"artist_name": artist, "track_name": title}
     if duration:
         q["duration"] = round(duration)
     try:
-        hit = http_json("https://lrclib.net/api/get?" + urllib.parse.urlencode(q))
-    except urllib.error.HTTPError as e:
-        if e.code != 404:
-            raise
-        hit = None
-    if not (hit and hit.get("syncedLyrics")):
-        found = http_json("https://lrclib.net/api/search?" + urllib.parse.urlencode({"q": f"{artist} {title}"}))
-        found = [r for r in found if r.get("syncedLyrics")]
-        if duration:
-            found.sort(key=lambda r: abs((r.get("duration") or 0) - duration))
-        hit = found[0] if found else None
+        try:
+            hit = http_json("https://lrclib.net/api/get?" + urllib.parse.urlencode(q))
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            hit = None
+        if not (hit and hit.get("syncedLyrics")):
+            found = http_json("https://lrclib.net/api/search?" + urllib.parse.urlencode({"q": f"{artist} {title}"}))
+            found = [r for r in found if r.get("syncedLyrics")]
+            if duration:
+                found.sort(key=lambda r: abs((r.get("duration") or 0) - duration))
+            hit = found[0] if found else None
+    except OSError:  # offline: an off-version copy still beats no lyrics
+        return cached
     if not hit:
-        return None
-    data = {"artist": hit["artistName"], "title": hit["trackName"], "lrc": hit["syncedLyrics"]}
+        return cached
+    data = {"artist": hit["artistName"], "title": hit["trackName"], "lrc": hit["syncedLyrics"], "duration": hit.get("duration")}
     CACHE.mkdir(exist_ok=True)
     f.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
-    return data
+    return {**data, "file": str(f)}
 
 
 def cover_url(artist, title):
@@ -193,6 +261,8 @@ class Player:
         self.track = {"id": 0, "title": "", "artist": "", "art": None, "words": []}
         self.status = IDLE
         self.pos, self.at, self.playing = 0.0, time.monotonic(), False
+        self.timed = False  # the position comes from the player itself (exact), not from counting or Shazam
+        self.lyrics = None  # fetch_lyrics' result for the track shown, for Learner
         self.last_heard = -999.0
 
     def set_clock(self, pos, playing):
@@ -201,10 +271,15 @@ class Player:
     def now(self):
         return self.pos + (time.monotonic() - self.at if self.playing else 0)
 
-    def publish(self, title, artist, art, words, status):
+    def publish(self, title, artist, art, words, status, lyrics=None):
         self.rev += 1
         self.track = {"id": self.tid, "title": title, "artist": artist, "art": art, "words": words}
-        self.status = status
+        self.status, self.lyrics = status, lyrics
+
+    def retime(self, words):
+        """Same words, better times (Learner heard them): the UI moves them without laying the screen out again."""
+        self.track = {**self.track, "words": words}
+        self.rev += 1
 
 
 async def load_track(player, cur):
@@ -220,7 +295,7 @@ async def load_track(player, cur):
         if not lyrics:
             player.publish(title, artist, art, [], player.status)
     if lyrics:
-        player.publish(lyrics["title"], lyrics["artist"], art, word_times(parse_lrc(lyrics["lrc"])), "")
+        player.publish(lyrics["title"], lyrics["artist"], art, words_for(lyrics), "", lyrics)
         if cur["pos"] is not None:
             return  # title and position both known: no need to listen
     # ponytail: one Shazam try per track, at most every 30 s; add retries if songs get missed
@@ -245,8 +320,8 @@ async def load_track(player, cur):
     player.set_clock(pos, True)  # used only when Windows gives no position
     if not lyrics:
         lyrics = await lookup(fetch_lyrics, h_artist, h_title, None)
-        words = word_times(parse_lrc(lyrics["lrc"])) if lyrics else []
-        player.publish(h_title, h_artist, art or cover, words, "" if lyrics else "No synced lyrics found for this song")
+        words = words_for(lyrics) if lyrics else []
+        player.publish(h_title, h_artist, art or cover, words, "" if lyrics else "No synced lyrics found for this song", lyrics)
 
 
 async def from_sound(player, key):
@@ -271,8 +346,8 @@ async def from_sound(player, key):
         player.publish(h_title, h_artist, cover, [], "Finding lyrics…")
         cover = await lookup(cover_url, h_artist, h_title) or cover
         lyrics = await lookup(fetch_lyrics, *clean(h_title, h_artist), None)
-        words = word_times(parse_lrc(lyrics["lrc"])) if lyrics else []
-        player.publish(h_title, h_artist, cover, words, "" if lyrics else "No synced lyrics found for this song")
+        words = words_for(lyrics) if lyrics else []
+        player.publish(h_title, h_artist, cover, words, "" if lyrics else "No synced lyrics found for this song", lyrics)
     return k
 
 
@@ -287,6 +362,7 @@ async def watch(player):
         except OSError:  # a session closed mid-read
             continue
         cur = next((i for i in infos if i["playing"]), infos[0] if infos else None)
+        player.timed = bool(cur and cur["pos"] is not None)
         if not cur or not (cur["title"] or cur["playing"]):
             # e.g. Chrome with media-key handling off reports nothing: identify by sound instead
             if key and key[0] != "sound":
@@ -317,6 +393,91 @@ async def watch(player):
             player.set_clock(player.now(), cur["playing"])
 
 
+class Learner:
+    """LRCLIB times lines, not words. While a song with lyrics plays, this records what the speakers play; every
+    ~30 s Whisper (faster-whisper, optional) writes down the words it hears, and those that match the lyrics are
+    saved into the lyrics cache with their real times. Replays, and choruses later in the same play, then follow
+    the singing word for word. English only: Whisper's small.en model, about 5x faster than real time on the CPU."""
+    RATE, BLOCK, CHUNK = 16000, 0.5, 30
+
+    def __init__(self, player):
+        self.player, self.jobs = player, queue.Queue(maxsize=3)
+
+    def start(self):
+        try:
+            import faster_whisper  # noqa: F401
+        except ImportError:
+            print("faster-whisper is not installed: words inside a line stay estimated")
+            return
+        threading.Thread(target=self.record, daemon=True).start()
+        threading.Thread(target=self.work, daemon=True).start()
+
+    def wanted(self):
+        """The lyrics worth listening for right now, or None."""
+        p, ly = self.player, self.player.lyrics
+        if p.playing and p.timed and ly and ly.get("file") and ly["lrc"].isascii() and not WORD_TAG.search(ly["lrc"]):
+            return ly
+        return None
+
+    def record(self):
+        import ctypes
+        import numpy as np
+        import soundcard as sc
+        ctypes.windll.ole32.CoInitializeEx(None, 0)  # soundcard needs COM on this thread
+        n = int(self.RATE * self.BLOCK)
+        while True:
+            try:  # reopened if the output device changes or goes away
+                mic = sc.get_microphone(str(sc.default_speaker().name), include_loopback=True)
+                with mic.recorder(samplerate=self.RATE) as rec:
+                    buf, t0, ly = [], 0.0, None
+                    while True:
+                        block = rec.record(numframes=n).mean(axis=1)
+                        now, cur = self.player.now(), self.wanted()  # song time at the end of this block
+                        joined = bool(buf) and cur is ly and abs(now - (t0 + (len(buf) + 1) * self.BLOCK)) < 0.3
+                        if buf and (not joined or len(buf) * self.BLOCK >= self.CHUNK):  # paused, seeked, new song or full
+                            if len(buf) * self.BLOCK >= 8:
+                                try:
+                                    self.jobs.put_nowait((ly, t0, np.concatenate(buf).astype("float32")))
+                                except queue.Full:  # Whisper is behind: skip this stretch, the next play fills it in
+                                    pass
+                            keep = buf[-4:] if joined else []  # 2 s overlap, so a word cut in half isn't lost
+                            t0, buf = t0 + (len(buf) - len(keep)) * self.BLOCK, keep
+                        if cur:
+                            if not buf:
+                                t0, ly = now - self.BLOCK, cur
+                            buf.append(block)
+            except Exception:
+                traceback.print_exc()
+                time.sleep(5)
+
+    def work(self):
+        from faster_whisper import WhisperModel
+        model = None
+        while True:
+            ly, t0, audio = self.jobs.get()
+            try:
+                if model is None:  # loaded on first use; the very first run downloads it (~480 MB)
+                    model = WhisperModel("small.en", device="cpu", compute_type="int8", cpu_threads=4)
+                segs, _ = model.transcribe(audio, language="en", word_timestamps=True, vad_filter=False,
+                                           condition_on_previous_text=False)
+                heard = [(t0 + w.start, w.word) for s in segs for w in s.words]
+                got = match_heard(parse_lrc(ly["lrc"]), heard, t0, t0 + len(audio) / self.RATE)
+                if got:
+                    self.save(ly, got)
+            except Exception:
+                traceback.print_exc()
+
+    def save(self, ly, got):
+        learned = ly.setdefault("learned", {})
+        learned.update({str(i): t for i, t in got.items()})
+        f = Path(ly["file"])
+        data = json.loads(f.read_text("utf-8"))
+        f.write_text(json.dumps({**data, "learned": learned}, ensure_ascii=False), "utf-8")
+        print(f"learned {len(got)} word times for {ly['artist']} - {ly['title']} ({len(learned)} so far)")
+        if self.player.lyrics is ly:
+            self.player.retime(words_for(ly))
+
+
 def run_watch(player):
     try:
         asyncio.run(watch(player))
@@ -340,7 +501,7 @@ class Api:
         self._player, self._wins, self._dual, self._open = player, [], False, True
         self._lock = threading.Lock()
         # mode: auto (two screens when available) | single; look: counts songs, the UI shows look % number of looks
-        self._cfg = {"mode": "auto", "stars_on": 0, "style": 0, "look": 0}
+        self._cfg = {"mode": "auto", "stars_on": 0, "style": 0, "look": 0, "lock": -1, "color": -1}
         if SETTINGS.exists():
             self._cfg.update(json.loads(SETTINGS.read_text("utf-8")))
         self._seen_tid, self._look_lock = 0, threading.Lock()
@@ -353,10 +514,24 @@ class Api:
                 self.next_look()
         return {"rev": p.rev, "pos": p.now(), "playing": p.playing, "status": p.status,
                 "dual": self._dual, "stars_on": self._cfg["stars_on"], "style": self._cfg["style"],
-                "look": self._cfg["look"]}
+                "look": self._cfg["lock"] if self._cfg["lock"] >= 0 else self._cfg["look"],
+                "lock": self._cfg["lock"], "color": self._cfg["color"]}
 
     def next_look(self):
         self._cfg["look"] += 1
+        self._save()
+
+    def set_lock(self, i):
+        """From the notch: -1 = mix (a new look every song), else stay on look i."""
+        i = int(i)
+        if i < 0 <= self._cfg["lock"]:
+            self._cfg["look"] = self._cfg["lock"]  # mixing carries on from the look on screen
+        self._cfg["lock"] = i
+        self._save()
+
+    def set_color(self, i):
+        """From the notch: Constellation's color, -1 = cycle through all 15."""
+        self._cfg["color"] = int(i)
         self._save()
 
     def track(self):
@@ -466,7 +641,7 @@ def demo(player, start):
     except OSError:
         art = None
     player.tid += 1
-    player.publish(lyrics["title"], lyrics["artist"], art, word_times(parse_lrc(lyrics["lrc"])), "")
+    player.publish(lyrics["title"], lyrics["artist"], art, words_for(lyrics), "")
     player.set_clock(start, True)
 
 
@@ -500,6 +675,20 @@ def selftest():
     assert clean("Believer", "Imagine Dragons - Topic", True) == ("Imagine Dragons", "Believer")
     assert clean("Jhol - Acoustic", "Maanu", True) == ("Maanu", "Jhol")  # a version, not "Artist - Song"
     assert cache_key("Charlie Puth", "We Don't Talk Anymore") == "charlie puth we don t talk anymore"
+    global CACHE
+    keep, CACHE = CACHE, Path(tempfile.mkdtemp())  # a cached copy of the same version is used without asking LRCLIB
+    (CACHE / "a b.json").write_text(json.dumps({"artist": "A", "title": "B", "lrc": "x", "duration": 200}), "utf-8")
+    assert fetch_lyrics("A", "B", 202)["lrc"] == "x" and fetch_lyrics("A", "B")["lrc"] == "x"
+    CACHE = keep
+    # learned word times: heard words move, unheard ones keep their spacing, the repeated line borrows them
+    lrc = "[00:10.00]I miss the taste of a sweet life\n[00:14.00]Hello there\n[00:20.00]I miss the taste of a sweet life\n[00:24.00]"
+    heard = [(10.02, "I"), (11.1, "miss"), (11.4, "the"), (11.9, "taste"), (12.5, "of"), (13.0, "sweet"), (25.0, "noise")]
+    got = match_heard(parse_lrc(lrc), heard, 9.5, 14)
+    assert got == {0: 10.02, 1: 11.1, 2: 11.4, 3: 11.9, 4: 12.5}  # "sweet" alone (no run of 2) is not trusted
+    w = words_for({"lrc": lrc, "learned": {str(i): t for i, t in got.items()}})
+    assert [x["t"] for x in w[:5]] == [10.0, 11.1, 11.4, 11.9, 12.5] and 12.5 < w[5]["t"] < w[6]["t"] < 14
+    assert [round(x["t"] - 20, 2) for x in w[10:15]] == [0, 1.1, 1.4, 1.9, 2.5]  # the chorus repeat, from 20 s
+    assert words_for({"lrc": lrc})[1]["t"] < 11  # nothing learned: the guess
     print("selftest ok")
 
 
@@ -518,4 +707,4 @@ if __name__ == "__main__":
         player = Player()
         if arg == "--demo":
             demo(player, float(sys.argv[2]) if len(sys.argv) > 2 else 0)
-        show(player, None if arg == "--demo" else lambda: run_watch(player))
+        show(player, None if arg == "--demo" else lambda: (Learner(player).start(), run_watch(player)))

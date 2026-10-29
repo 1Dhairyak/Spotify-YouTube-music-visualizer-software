@@ -14,6 +14,9 @@ Each song gets the next of 5 looks, in turn:
 
 - **No login.** It reads the song from Windows' media controls (the title in the volume popup).
 - **Synced lyrics** from [LRCLIB](https://lrclib.net), cached locally.
+- **Learns word timing by listening.** LRCLIB times lines, not words. While an English song plays, Whisper
+  (`faster-whisper`, small.en, ~480 MB downloaded on first use) hears which word is sung when and saves it, so
+  replays and repeated choruses follow the singing word for word. Without `faster-whisper` installed, words inside a line are estimated.
 - **Recognize by sound** (Shazam) when a player doesn't report the song.
 - **Sharp album art** from the iTunes catalogue.
 
@@ -28,6 +31,8 @@ python app.py --demo 15    # demo with the first song in songs.txt, starting at 
 ```
 
 Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anywhere.
+
+**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (a new look every song), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered.
 
 ## Keys
 

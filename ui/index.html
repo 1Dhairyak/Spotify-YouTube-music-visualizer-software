@@ -62,6 +62,28 @@
   [data-look=atlas] #artist, [data-look=atlas] #cover .a { font-family: Bahnschrift, 'Segoe UI', sans-serif; font-weight: 300;
     text-transform: uppercase; letter-spacing: .2em; }
   [data-look=ink] #art, [data-look=pop] #art { border-radius: 6px; }
+
+  /* The notch: a black pill at the top center that opens, on hover, into the look and color pickers */
+  #notch { position: fixed; top: 0; left: 50%; z-index: 5; width: 180px; min-height: 26px; max-height: 26px; transform: translateX(-50%);
+    background: #000; color: #fff; border-radius: 0 0 16px 16px; overflow: hidden;
+    font: 500 13px "Segoe UI Variable Text", "Segoe UI", sans-serif;
+    transition: width .5s cubic-bezier(.2, .9, .25, 1.08), max-height .5s cubic-bezier(.2, .9, .25, 1.08),
+                border-radius .5s, box-shadow .5s; }
+  #notch:hover { width: min(780px, 96vw); max-height: 240px; border-radius: 0 0 30px 30px; box-shadow: 0 14px 44px rgba(0,0,0,.5); }
+  #notch .in { display: grid; gap: 12px; padding: 16px 18px; opacity: 0; transition: opacity .2s; }
+  #notch:hover .in { opacity: 1; transition: opacity .3s .15s; }
+  #notch .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+  #notch:not(.colors) #colors { display: none; }
+  .chip { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border-radius: 99px; background: #1c1c1c;
+    cursor: pointer; white-space: nowrap; transition: background .25s, color .25s, box-shadow .25s; }
+  .chip:hover { background: #2c2c2c; }
+  .chip.on { background: #fff; color: #000; }
+  .chip.cur { box-shadow: inset 0 0 0 1.5px #fff; }   /* the look showing while mixing */
+  .chip.plain { padding: 5px 14px; }
+  .chip i { width: 20px; height: 20px; border-radius: 50%; }
+  .dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; transition: transform .2s, box-shadow .25s; }
+  .dot:hover { transform: scale(1.15); }
+  .dot.on { box-shadow: 0 0 0 2px #000, 0 0 0 4px #fff; }
 </style>
 </head>
 <body>
@@ -70,6 +92,7 @@
 <div id="cover"><img alt=""><div class="t"></div><div class="a"></div></div>
 <div id="status"></div>
 <div id="toast"></div>
+<div id="notch"><div class="in"><div class="row" id="looks"></div><div class="row" id="colors"></div></div></div>
 <script>
 // ---------- shared by every look ----------
 const LOOKS = [];      // each ui/looks/*.js file adds one entry; the app shows one look per song, in order
@@ -216,7 +239,7 @@ function snapshot() {
   ghost.width = cv.width; ghost.height = cv.height; ghost.getContext('2d').drawImage(cv, 0, 0); ghostAt = now();
 }
 function setLook(i) {
-  i = ((i % LOOKS.length) + LOOKS.length) % LOOKS.length;
+  i = (((Number(i) || 0) % LOOKS.length) + LOOKS.length) % LOOKS.length;   // never NaN: that would blank the screen
   if (i === look) return LOOKS[i];
   if (look >= 0) snapshot();
   look = i;
@@ -270,16 +293,27 @@ function showTrack(t) {
 
 async function poll() {
   try {
-    const s = await api.state();
+    const s = lastState = await api.state();
     clock = { pos: s.pos, at: performance.now(), playing: s.playing };
     $('#status').textContent = s.status;
     view = !s.dual ? (WIN ? 'gone' : 'both') : (WIN === s.stars_on ? 'stars' : 'cover');
     document.body.className = 'view-' + view;
-    if (s.look !== lookSaved) { lookSaved = s.look; setLook(s.look); }   // new song, N key, or the other screen
-    LOOKS.forEach(l => l.poll && l.poll(s));
+    if (now() - pickedAt > 0.8) {   // just picked here: this answer may predate the pick
+      if (s.look !== lookSaved) { lookSaved = s.look; setLook(s.look); }   // new song, N key, notch, or the other screen
+      LOOKS.forEach(l => l.poll && l.poll(s));
+      lockNow = s.lock; colorNow = s.color;
+    }
+    markNotch();
     if (s.rev !== rev) {
       rev = s.rev;
       const t = await api.track();
+      if (t.id === track.id && t.words.length && t.words.length === track.words.length && t.words.every((w, i) => w.w === track.words[i].w)) {
+        // same words, times heard by the app's listener: move them in place, so nothing on screen is laid out again
+        t.words.forEach((w, i) => { track.words[i].t = w.t; });
+        track.phrases.forEach(ph => { ph.t0 = ph.words[0].t; ph.tEnd = ph.words[ph.words.length - 1].t; });
+        track.phrases.forEach((ph, i, P) => { ph.t1 = i + 1 < P.length ? P[i + 1].t0 : ph.tEnd + 4; });
+        return;
+      }
       t.phrases = phrasesOf(t.words);
       const changed = t.id !== track.id;
       if (changed || t.title !== track.title || t.art !== track.art) showTrack(t);
@@ -290,6 +324,43 @@ async function poll() {
   } catch (e) { console.error(e); }
 }
 addEventListener('pywebviewready', () => { api = pywebview.api; poll(); setInterval(poll, 250); });
+
+// ---------- the notch: stay on one look or mix them (a new one every song), and Constellation's color ----------
+const SWATCH = { constellation: 'radial-gradient(circle at 60% 40%, #E8D44D 0 22%, #111 26%)',
+                 pulse: 'linear-gradient(135deg, #FF1F8E, #F6C4DA 55%, #2A0F1C)',
+                 pop: 'conic-gradient(#CC1A4A 0 33%, #3FF0C3 0 66%, #EECB5B 0)',
+                 ink: 'linear-gradient(135deg, #EEEBE3 50%, #1A1916 50%)',
+                 atlas: 'linear-gradient(135deg, #0F5A52, #04201D 55%, #C8DE78)' };
+let lockNow = -1, colorNow = -1, pickedAt = -9, lastState = {};
+function buildNotch() {
+  $('#looks').innerHTML = '<div class="chip plain" data-i="-1">Mix</div>' + LOOKS.map((l, i) =>
+    `<div class="chip" data-i="${i}"><i style="background:${SWATCH[l.id] || '#444'}"></i>${l.name}</div>`).join('');
+  $('#colors').innerHTML = '<div class="chip plain" data-c="-1">Cycle</div>' + PALETTE.map((c, i) =>
+    `<div class="dot" data-c="${i}" style="background:${c}" title="${c}"></div>`).join('');
+  $('#looks').onclick = e => { const el = e.target.closest('[data-i]'); if (el) pickLook(+el.dataset.i); };
+  $('#colors').onclick = e => {
+    const el = e.target.closest('[data-c]');
+    if (!el) return;
+    pickedAt = now(); colorNow = +el.dataset.c;
+    LOOKS.forEach(l => l.poll && l.poll({ ...lastState, color: colorNow }));   // blend now, not on the next poll
+    api.set_color(colorNow); markNotch();
+  };
+}
+function pickLook(i) {   // -1 = mix
+  pickedAt = now(); lockNow = i;
+  if (i >= 0) { lookSaved = i; setLook(i); }   // the old look crossfades into the new one
+  api.set_lock(i); markNotch();
+}
+function markNotch() {
+  const id = LOOKS[look] && LOOKS[look].id;
+  $('#notch').classList.toggle('colors', id === 'constellation');
+  document.querySelectorAll('#looks .chip').forEach(el => {
+    const i = +el.dataset.i;
+    el.classList.toggle('on', i === lockNow || (i === -1 && lockNow < 0));
+    el.classList.toggle('cur', lockNow < 0 && i === look);
+  });
+  document.querySelectorAll('#colors [data-c]').forEach(el => el.classList.toggle('on', +el.dataset.c === colorNow));
+}
 
 let toastTimer;
 function toast(msg) {
@@ -304,7 +375,9 @@ addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); toast(clock.playing ? 'Paused' : 'Playing'); api.play_pause(); return; }
   if (e.key === 'd' || e.key === 'D') { api.toggle_dual().then(toast); return; }
   if (e.key === 's' || e.key === 'S') { api.swap().then(toast); return; }
+  if ((e.key === 'n' || e.key === 'N') && lockNow >= 0) { pickLook((look + 1) % LOOKS.length); toast(`Look: ${LOOKS[look].name}`); return; }
   if (e.key === 'n' || e.key === 'N') {
+    pickedAt = now();
     lookSaved = (lookSaved || 0) + 1;
     const lk = setLook(lookSaved);
     toast(`Look ${look + 1}: ${lk.name}`);
@@ -328,6 +401,7 @@ addEventListener('keydown', e => {
 <script src="looks/atlas.js"></script>
 <script>
 resize();
+buildNotch();
 // Start drawing once the fonts are in, so the first layouts are measured with the real lettering.
 Promise.race([
   Promise.all(['900 40px Archivo', 'italic 900 40px Archivo', '40px "League Gothic"', '40px "Alfa Slab One"',

@@ -8,11 +8,17 @@ const COLOR_EVERY = 20;  // seconds per color
 const COLOR_FADE = 2;    // seconds to blend into the next one
 let ACCENT = PALETTE[0];
 const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+// A color picked in the notch holds (-1 = cycle); switching blends from the color on screen over a second.
+let colorPick = -1, pickFrom = null, pickAt = -9, shownRGB = rgb(PALETTE[0]);
 function accent() {
   const t = Math.max(0, songTime()), i = Math.floor(t / COLOR_EVERY), n = PALETTE.length;
   const from = rgb(PALETTE[(i - 1 + n) % n]), to = rgb(PALETTE[i % n]);
   const f = i ? Math.min(1, (t - i * COLOR_EVERY) / COLOR_FADE) : 1;
-  return `rgb(${to.map((v, k) => Math.round(from[k] + (v - from[k]) * f)).join(',')})`;
+  let c = colorPick >= 0 ? rgb(PALETTE[colorPick]) : to.map((v, k) => from[k] + (v - from[k]) * f);
+  const p = easeInOut(Math.min(1, (now() - pickAt) / 1));
+  if (pickFrom && p < 1) c = c.map((v, k) => pickFrom[k] + (v - pickFrom[k]) * p);
+  shownRGB = c;
+  return `rgb(${c.map(Math.round).join(',')})`;
 }
 const SCENE = 13;      // words in a constellation before it clears (at the next line end)
 const SCENE_MAX = 18;  // ...or clears anyway at this many
@@ -20,7 +26,7 @@ const HOLD = 2.0;      // seconds a line-end word stays big
 const SHRINK = 0.6;    // seconds it takes to shrink
 const CLEAR = 0.8;     // seconds a finished constellation takes to fade out
 const SMALL = 15;      // px, small labels
-const LAP = 4;         // seconds per loop of the border light
+const LAP = 6;         // seconds per loop of the border light
 const TAIL = 0.3;      // tail length, as a share of the border
 
 let nodes = [], links = [], shown = -1;   // shown = index of the last word placed
@@ -122,32 +128,60 @@ function triMarker(x, y, r, isCur, a) {
 }
 
 // Point at distance d (wrapping) along the screen edge, clockwise from the top-left corner.
-function edge(d) {
-  const i = 3, w = W - 2 * i, h = H - 2 * i, P = 2 * (w + h);
-  d = ((d % P) + P) % P;
-  if (d < w) return [i + d, i];
-  if ((d -= w) < h) return [i + w, i + d];
-  if ((d -= h) < w) return [i + w - d, i + h];
-  return [i, i + h - (d - w)];
+// The border light, like the reference: a soft wide glow around the whole screen with rounded corners, and a
+// glassy comet (bright core inside a wide translucent band) gliding round it, flaring as it rounds each corner.
+function frameRect() {
+  const i = 4, w = W - 2 * i, h = H - 2 * i, r = clamp(Math.min(W, H) * 0.03, 14, 36);
+  const sw = w - 2 * r, sh = h - 2 * r, q = Math.PI * r / 2;
+  const arc = (cx, cy, a0) => t => [cx + r * Math.cos(a0 + t / r), cy + r * Math.sin(a0 + t / r)];
+  const segs = [[sw, t => [i + r + t, i]], [q, arc(i + w - r, i + r, -Math.PI / 2)],
+                [sh, t => [i + w, i + r + t]], [q, arc(i + w - r, i + h - r, 0)],
+                [sw, t => [i + w - r - t, i + h]], [q, arc(i + r, i + h - r, Math.PI / 2)],
+                [sh, t => [i, i + h - r - t]], [q, arc(i + r, i + r, Math.PI)]];
+  const corners = [];   // where each corner's arc is halfway round
+  segs.reduce((acc, [len], k) => { if (k % 2) corners.push(acc + len / 2); return acc + len; }, 0);
+  return { i, w, h, r, segs, corners, P: 2 * (sw + sh) + 4 * q };
 }
-
+function along(F, d) {   // the point d px clockwise round the border
+  d = ((d % F.P) + F.P) % F.P;
+  for (const [len, f] of F.segs) { if (d <= len) return f(d); d -= len; }
+  return F.segs[0][1](0);
+}
 function border(T) {
-  const P = 2 * (W + H - 12), head = (T / LAP % 1) * P, N = 60;
-  ctx.strokeStyle = ctx.fillStyle = ACCENT;
-  ctx.shadowColor = ACCENT;
-  ctx.globalAlpha = 0.35; ctx.lineWidth = 3; ctx.shadowBlur = 22;   // static glow on the whole edge
-  ctx.strokeRect(3, 3, W - 6, H - 6);
-  ctx.shadowBlur = 0;
-  for (let k = 0; k < N; k++) {                                       // fading tail
-    const a = edge(head - TAIL * P * (1 - k / N)), b = edge(head - TAIL * P * (1 - (k + 1) / N));
-    const f = (k + 1) / N;
-    ctx.globalAlpha = f * f * 0.9; ctx.lineWidth = 2 + f * 2;
-    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  const F = frameRect(), head = (T / LAP % 1) * F.P, len = TAIL * F.P, N = 56;
+  const core = `rgb(${shownRGB.map(v => Math.round(v + (255 - v) * 0.6)).join(',')})`;   // glassy: near-white center
+  ctx.save();
+  ctx.lineCap = ctx.lineJoin = 'round'; ctx.shadowBlur = 0; ctx.strokeStyle = ACCENT;
+  const breathe = 0.85 + 0.15 * Math.sin(T * 1.2);
+  for (const [lw, a] of [[24, 0.035], [13, 0.06], [6, 0.12], [1.8, 0.42]]) {   // soft wide edge glow, no blur needed
+    ctx.globalAlpha = a * breathe; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.roundRect(F.i, F.i, F.w, F.h, F.r); ctx.stroke();
   }
-  const [hx, hy] = edge(head);                                        // bright head
-  ctx.globalAlpha = 1; ctx.shadowBlur = 25;
-  ctx.beginPath(); ctx.arc(hx, hy, 3.5, 0, 6.29); ctx.fill();
-  ctx.shadowBlur = 0;
+  const pts = Array.from({ length: N + 1 }, (_, k) => along(F, head - len * (1 - k / N)));
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'butt';   // butt ends: round ones overlap into beads
+  for (const [lw, a, col] of [[30, 0.06, ACCENT], [16, 0.16, ACCENT], [7, 0.4, ACCENT], [2.4, 0.9, core]]) {   // the comet
+    ctx.lineWidth = lw; ctx.strokeStyle = col;
+    for (let k = 0; k < N; k++) {
+      const f = (k + 1) / N;
+      ctx.globalAlpha = a * Math.pow(f, 1.6);
+      ctx.beginPath(); ctx.moveTo(pts[k][0], pts[k][1]); ctx.lineTo(pts[k + 1][0], pts[k + 1][1]); ctx.stroke();
+    }
+  }
+  const glow = (x, y, rad, a, inner) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    g.addColorStop(0, inner); g.addColorStop(0.18, ACCENT); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = a; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.29); ctx.fill();
+  };
+  for (const c of F.corners) {   // a corner flares as the light rounds it, then fades
+    const since = (((head - c) % F.P) + F.P) % F.P / F.P * LAP;
+    if (since < 1.1) {
+      const e = 1 - since / 1.1, [x, y] = along(F, c);
+      glow(x, y, F.r * 2 + 90 * (1 - e * 0.5), 0.55 * e * e, core);
+    }
+  }
+  const [hx, hy] = pts[N];
+  glow(hx, hy, 34, 0.9, '#fff');   // the head: a soft bright orb
+  ctx.restore();
 }
 
 function draw(T) {
@@ -361,7 +395,10 @@ LOOKS.push({
   reset,
   pre(T) { setStyle(styleBase + styleSlot()); },
   frame(T) { step(); draw(T); },
-  poll(s) { if (s.style !== savedStyle) styleBase = savedStyle = s.style; },   // startup, or set on the other screen
+  poll(s) {
+    if (s.style !== savedStyle) styleBase = savedStyle = s.style;   // startup, or set on the other screen
+    if (s.color !== colorPick) { pickFrom = shownRGB; pickAt = now(); colorPick = s.color; }
+  },
   key(e) {
     const pick = e.key === 't' || e.key === 'T' ? style + 1 : '123456789'.indexOf(e.key);
     if (pick < 0 || (pick >= STYLES.length && e.key.toLowerCase() !== 't')) return false;

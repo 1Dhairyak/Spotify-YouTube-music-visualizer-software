@@ -62,17 +62,25 @@
         const len = Math.min(n - i, r() < 0.45 ? 1 : r() < 0.75 ? 2 : 3);
         rows.push(ws.slice(i, i += len));
       }
+      const chr = rw => rw.map(w => w.w).join(' ').length;
+      for (let i; rows.length > 1 && (i = rows.findIndex(rw => chr(rw) < 4)) >= 0;) {   // a lone "I" or "OR" can't be stretched to the block's width: join it to a neighbour
+        const j = i === 0 ? 1 : i === rows.length - 1 || chr(rows[i - 1]) <= chr(rows[i + 1]) ? i - 1 : i + 1;
+        rows.splice(Math.min(i, j), 2, rows[Math.min(i, j)].concat(rows[Math.max(i, j)]));
+      }
       while (rows.length > 5) {   // merge the two shortest neighbours
         let best = 0;
         for (let i = 1; i + 1 < rows.length; i++) if (rows[i].length + rows[i + 1].length < rows[best].length + rows[best + 1].length) best = i;
         rows.splice(best, 2, rows[best].concat(rows[best + 1]));
       }
-      const vertical = n >= 4 && r() < 0.2;
-      const blockW = vertical ? S.h * 0.7 : W * (0.3 + r() * 0.14), maxPx = (vertical ? W * 0.16 : S.h * 0.36);
+      const maxPx = S.h * 0.36;
+      let blockW = W * (0.3 + r() * 0.14);
+      const fonts = rows.map(() => pickR(r, ['lg', 'lg', 'lg', 'js', 'as']));
+      const boxes = rows.map((rw, i) => capsBox(rw.map(w => caps(w.w)).join(' '), FONTS[fonts[i]](100)));
+      // a short row tops out at maxPx before it is blockW wide: narrow the block to it so every row still shares one width
+      blockW = Math.min(blockW, ...boxes.map(m => m.w * maxPx / 100));
       let extDone = false, colorFlip = r() < 0.5;
       const R = rows.map((rw, i) => {
-        const f = pickR(r, ['lg', 'lg', 'lg', 'js', 'as']), s = rw.map(w => caps(w.w)).join(' ');
-        const m = capsBox(s, FONTS[f](100));
+        const f = fonts[i], m = boxes[i];
         const px = Math.min(100 * blockW / m.w, maxPx);
         const ext = !extDone && f !== 'js' && r() < 0.45; if (ext) extDone = true;
         if (r() < 0.6) colorFlip = !colorFlip;
@@ -80,11 +88,11 @@
       });
       const gap = Math.max(6, blockW * 0.02);
       let total = R.reduce((a, x) => a + x.h, 0) + gap * (R.length - 1);
-      const limit = vertical ? W * 0.55 : S.h * 0.8;
+      const limit = S.h * 0.8;
       const k = Math.min(1, limit / total);
       total *= k;
       const bw = Math.max(...R.map(x => x.w)) * k;
-      const ox = vertical ? 0 : (r() - 0.5) * W * 0.12;
+      const ox = (r() - 0.5) * W * 0.12;
       const cx = S.cx + ox, cy = S.cy;
       let y = -total / 2;
       for (const row of R) {
@@ -100,7 +108,7 @@
         }
         y += row.h + gap * k;
       }
-      Object.assign(L, { cx, cy, rot: vertical ? -Math.PI / 2 : 0 });
+      Object.assign(L, { cx, cy, rot: 0 });   // always upright: sideways blocks read badly
     } else if (type === 'shout') {
       const s = ws.map(w => caps(w.w)).join(' '), f = n === 1 ? 'lg' : pickR(r, ['lg', 'as']);
       const m = capsBox(s, FONTS[f](100)), px = Math.min(100 * W * 0.42 / m.w, S.h * 0.5);

@@ -7,3 +7,4 @@ winrt-Windows.Storage.Streams
 shazamio
 soundcard
 numpy
+faster-whisper
