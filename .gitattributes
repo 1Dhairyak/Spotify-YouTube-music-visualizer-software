@@ -1,0 +1,2 @@
+# shell script: must keep LF to run on Linux/macOS
+android/gradlew text eol=lf

@@ -390,7 +390,7 @@ function snapshot() {
   ghost.width = cv.width; ghost.height = cv.height; ghost.getContext('2d').drawImage(cv, 0, 0); ghostAt = now();
 }
 let lookWant = 0;   // the look asked for (song turn, notch, N key); a phone shows Constellation whatever it is
-const isPhone = () => innerWidth < 700;
+const isPhone = () => window.MOBILE_APP || innerWidth < 700;   // MOBILE_APP: set by the Android app's android.js
 function setLook(i) {
   i = (((Number(i) || 0) % LOOKS.length) + LOOKS.length) % LOOKS.length;   // never NaN: that would blank the screen
   lookWant = i;
@@ -637,6 +637,12 @@ addEventListener('pointermove', e => {   // hovering the notch's drawn shape ope
   setNotchOpen(!!s && e.clientX > s.x0 - m && e.clientX < s.x1 + m && e.clientY < s.y1 + m);
 });
 document.addEventListener('pointerleave', () => setNotchOpen(false));
+addEventListener('pointerdown', e => {   // touch has no hover: a tap on the notch (or where it hides) opens it, elsewhere closes
+  if (e.pointerType === 'mouse') return;
+  notch.idleAt = now(); notch.away = false;
+  const s = notchShape() || { x0: W / 2 - 90, x1: W / 2 + 90, y1: 26 }, m = notch.open ? 10 : 16;
+  setNotchOpen(e.clientX > s.x0 - m && e.clientX < s.x1 + m && e.clientY < s.y1 + m);
+});
 // Start drawing once the fonts are in, so the first layouts are measured with the real lettering.
 Promise.race([
   Promise.all(['900 40px Archivo', 'italic 900 40px Archivo', '40px "League Gothic"', '40px "Alfa Slab One"',

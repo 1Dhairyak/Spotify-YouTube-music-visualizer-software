@@ -1,0 +1,67 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Release signing: android/keystore.properties (not in git) names the keystore; without it the APK is debug-signed.
+def keyProps = new Properties()
+def keyFile = rootProject.file('keystore.properties')
+if (keyFile.exists()) keyFile.withInputStream { keyProps.load(it) }
+
+def uiAssets = "${layout.buildDirectory.get().asFile}/generated/uiAssets"
+
+android {
+    namespace 'io.github.onedhairyak.lyricconstellation'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.onedhairyak.lyricconstellation'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.9.0'   // keep in step with lyric_constellation/__init__.py
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    signingConfigs {
+        if (keyFile.exists()) {
+            release {
+                storeFile file(keyProps['storeFile'])
+                storePassword keyProps['storePassword']
+                keyAlias keyProps['keyAlias']
+                keyPassword keyProps['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keyFile.exists() ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    sourceSets {
+        main { assets.srcDirs += uiAssets }
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
+// The page is the desktop app's own ui/index.html, with only the Constellation look, and android.js in front of it
+// (it answers the page's pywebview.api calls). Copied at every build so the two never drift apart.
+tasks.register('copyUi', Copy) {
+    from("$rootDir/../ui") {
+        include 'index.html', 'fonts/**', 'looks/constellation.js'
+        filesMatching('index.html') {
+            filter { String line ->
+                if (line.contains('<script src="looks/') && !line.contains('constellation.js')) return null
+                line.replace('<title>Music Sync</title>', '<title>Lyric Constellation</title>\n<script src="android.js"></script>')
+            }
+        }
+    }
+    from("$rootDir/web") { include 'android.js' }
+    into "$uiAssets/ui"
+}
+preBuild.dependsOn copyUi

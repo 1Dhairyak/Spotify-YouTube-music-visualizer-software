@@ -7,3 +7,6 @@ __pycache__/
 # reference clips
 *.mp4
 *.tmp
+# PyInstaller output (the Windows download)
+build/
+dist/

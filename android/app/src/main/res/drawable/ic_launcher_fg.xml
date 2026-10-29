@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A small constellation: three linked stars, the largest one glowing, like the app's lyrics -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#E8D44D" android:strokeWidth="1.6" android:strokeAlpha="0.7"
+        android:pathData="M38,66 L52,44 L72,58 Z" />
+    <path android:fillColor="#E8D44D" android:fillAlpha="0.25"
+        android:pathData="M72,58m-11,0a11,11 0,1 1,22 0a11,11 0,1 1,-22 0" />
+    <path android:fillColor="#FFF6C9"
+        android:pathData="M72,49 L74.2,55.8 L81,58 L74.2,60.2 L72,67 L69.8,60.2 L63,58 L69.8,55.8 Z" />
+    <path android:fillColor="#E8D44D" android:pathData="M38,66m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+    <path android:fillColor="#E8D44D" android:pathData="M52,44m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
+</vector>
