@@ -32,6 +32,9 @@ Each song gets the next of 7 looks, in turn (or pick **Mix** in the notch to swi
   (`faster-whisper`, small.en, ~480 MB downloaded on first use) hears which word is sung when and saves it, so
   replays and repeated choruses follow the singing word for word. Without `faster-whisper` installed, words inside a line are estimated.
 - **Recognize by sound** (Shazam) when a player doesn't report the song.
+- **Knows an emotional song when it hears one.** A small trained model reads the lyrics' words (English and romanized
+  Hindi/Punjabi) and how densely they're sung, then listens to the music itself: brightness, percussion, beat and
+  swells, which works in any language. Ballads get calm mode; the log shows each decision (`mood: … -> calm 0.82`).
 - **Sharp album art** from the iTunes catalogue.
 
 ## Run from source
@@ -46,7 +49,7 @@ python app.py --demo 15    # demo with the first song in songs.txt, starting at 
 
 Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anywhere.
 
-**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (looks take turns every 5-10 s, each with a random variant, in a new order every play), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
+**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (looks take turns every 5-10 s, each with a random variant, in a new order every play), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. On emotional songs the app goes calm: muted colors, slower motion, gentler pops, and Mix sticks to the quiet looks for 12-20 s each; **Auto · Calm · Lively** in the notch lets it decide or forces one. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
 
 **The mouse:** every look reacts to it. Words and stars near the cursor are pushed aside and magnified, then spring back; the scene leans with it; the edge light bends toward it, ripples when you sweep past and races to meet it. **Click** anywhere to send a shockwave that knocks the lyrics outward. Every word pops as it's sung and the scene kicks in on each line. Drawing keeps pace with the screen's refresh rate (180 Hz included).
 
@@ -70,6 +73,11 @@ pip install -r requirements-dev.txt
 pytest        # lyrics parsing, word timing, title cleanup, cache
 ruff check .
 ```
+
+Retrain the mood model: `python tools/train_mood.py fetch` measures the labeled songs in `tools/mood_songs.txt` and
+`tools/mood_heldout.txt` (lyrics from LRCLIB, sound streamed from iTunes previews by ffmpeg, nothing saved but the
+measurements), then `python tools/train_mood.py train` fits it, prints its test accuracy and writes
+`lyric_constellation/mood_model.json`.
 
 Build the downloads: `python -m PyInstaller LyricConstellation.spec` (Windows, into `dist/`) and
 `android/gradlew assembleRelease` (Android; the app is `ui/index.html` with only Constellation, plus `android/web/android.js`

@@ -302,7 +302,7 @@ function pace() {
 function border(T) {
   updateTouch(T);
   ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);   // screen-fixed: no parallax
-  const F = frameRect(T), len = TAIL * F.Pb, N = isPhone() ? 16 : 24, base = F.Pb / LAP * pace();
+  const F = frameRect(T), len = TAIL * F.Pb, N = isPhone() ? 16 : 24, base = F.Pb / LAP * pace() * (1 - 0.3 * calmFx);
   // where along the edge is the mouse? the light speeds up to reach it, then lingers there
   let want = base;
   if (mouse.inside && mouse.presence > 0.2 && now() - mouse.at < 2.5) {

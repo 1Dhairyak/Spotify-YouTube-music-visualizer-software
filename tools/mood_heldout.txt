@@ -1,0 +1,53 @@
+# The test set: songs from the app's own lyrics cache (what this app's user really plays), labeled the same way,
+# never used for training. "E" = emotional, "L" = lively; the name is the cache file's name (artist and title).
+E  aditya rikhari faasle
+E  aditya rikhari paro
+E  aditya rikhari sahiba
+E  alec benjamin let me down slowly
+E  anuv jain arz kiya hai
+E  chris grey let the world burn with g eazy ari abdul remix
+E  dhruv double take
+E  faheem abdullah ishq from lost found
+E  girl in red we fell in love in october
+E  james arthur say you won t let go
+E  jaymes young infinity
+E  kina can we kiss forever
+E  lana del rey dark paradise
+E  lana del rey salvatore
+E  maanu jhol acoustic
+E  mithoon humnava
+E  mukesh kya khoob lagti ho
+E  powfu death bed coffee for your head
+E  ruth b dandelions
+E  tate mcrae you broke me first
+E  witt lowry into your arms
+L  24kgoldn mood
+L  aastha gill buzz
+L  ariana grande 7 rings
+L  ash king jigar saraiya bandook meri laila from a gentleman feat raftaar sidharth malhotra
+L  charlie puth attention
+L  chris brown under the influence
+L  dj snake let me love you
+L  doja cat agora hills
+L  dua lipa levitating
+L  dua lipa new rules
+L  elyotto sugarcrash
+L  eminem rap god
+L  guru randhawa sirra
+L  harrdy sandhu backbone
+L  justin bieber boyfriend
+L  justin bieber sorry
+L  kanye west good morning
+L  karan aujla boyfriend
+L  lauv i like me better
+L  lisa money
+L  meet bros anjjan chittiyaan kalaiyaan
+L  måneskin beggin
+L  panic at the disco house of memories
+L  sabrina carpenter espresso
+L  shae gill pasoori
+L  shawn mendes treat you better
+L  the chainsmokers something just like this
+L  the weeknd party monster
+L  tiesto tiësto dzeko
+L  tones and i dance monkey

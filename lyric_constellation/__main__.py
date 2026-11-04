@@ -12,6 +12,7 @@ from . import DATA, ROOT, __version__, migrate_old_data
 from .learner import Learner
 from .lyrics import clean, cover_url, fetch_lyrics, words_for
 from .media import Player, read_session, run_watch
+from .mood import MoodListener
 from .window import show
 
 log = logging.getLogger("lyric_constellation")
@@ -93,7 +94,7 @@ def main():
         player = Player()
         if arg == "--demo":
             demo(player, float(sys.argv[2]) if len(sys.argv) > 2 else 0)
-        show(player, None if arg == "--demo" else lambda: (Learner(player).start(), run_watch(player)))
+        show(player, None if arg == "--demo" else lambda: (Learner(player).start(), MoodListener(player).start(), run_watch(player)))
 
 
 if __name__ == "__main__":

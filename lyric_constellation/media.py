@@ -3,6 +3,7 @@ import asyncio, base64, io, logging, time, wave
 from datetime import datetime, timezone
 
 from .lyrics import JUNK, clean, cover_url, fetch_lyrics, words_for
+from .mood import SongMood
 
 log = logging.getLogger(__name__)
 BROWSERS = ("chrome", "msedge", "firefox", "brave", "opera", "vivaldi")
@@ -85,6 +86,7 @@ class Player:
         self.timed = False  # the position comes from the player itself (exact), not from counting or Shazam
         self.lyrics = None  # fetch_lyrics' result for the track shown, for Learner
         self.last_heard = -999.0
+        self.mood = None  # SongMood of the track shown: how emotional it is (MoodListener adds what it hears)
 
     def set_clock(self, pos, playing):
         self.pos, self.at, self.playing = pos, time.monotonic(), playing
@@ -96,6 +98,11 @@ class Player:
         self.rev += 1
         self.track = {"id": self.tid, "title": title, "artist": artist, "art": art, "words": words}
         self.status, self.lyrics = status, lyrics
+        if not self.mood or self.mood.tid != self.tid:   # a new song; a later publish of the same one keeps what was heard
+            self.mood = SongMood(self.tid)
+        self.mood.name = f"{artist} - {title}"
+        if lyrics and self.mood.zl is None:
+            self.mood.set_lyrics(lyrics["lrc"])
 
     def retime(self, words):
         """Same words, better times (Learner heard them): the UI moves them without laying the screen out again."""

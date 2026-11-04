@@ -87,7 +87,7 @@
   #notch.open .in { opacity: 1; transition: opacity .3s .12s; }
   #notch .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
   #notch:not(.colors) #colors { display: none; }
-  .phone #looks { display: none; }
+  .phone #looks, .phone #moods { display: none; }
   .chip { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border-radius: 99px; background: #1c1c1c;
     cursor: pointer; white-space: nowrap; transition: background .25s, color .25s, box-shadow .25s; }
   .chip:hover { background: #2c2c2c; }
@@ -135,6 +135,7 @@
     <div class="mbtn" data-m="next" title="Next"><svg viewBox="0 0 24 24"><path d="M15.6 5H18v14h-2.4zM5 5l9.8 7L5 19z"/></svg></div>
   </div>
   <div class="row" id="looks"></div><div class="row" id="colors"></div>
+  <div class="row" id="moods"><div class="chip plain" data-mood="auto">Auto</div><div class="chip plain" data-mood="calm">Calm</div><div class="chip plain" data-mood="lively">Lively</div></div>
 </div></div>
 <div id="cursor"></div>
 <script>
@@ -175,6 +176,20 @@ const easeOut = p => 1 - Math.pow(1 - clamp(p, 0, 1), 3);
 const easeInOut = p => { p = clamp(p, 0, 1); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
 const backOut = p => { p = clamp(p, 0, 1) - 1; return 1 + 2.7 * p * p * p + 1.7 * p * p; };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const smoothstep = (a, b, v) => { v = clamp((v - a) / (b - a), 0, 1); return v * v * (3 - 2 * v); };
+// Calm mode: on emotional songs (app.py's mood model, or the notch's Calm / Lively) the scene goes muted and slow.
+// calmNow eases toward the target; calmFx (0..1) scales the effects; calmMode (with hysteresis) swaps the Mix pool.
+let calmIn = null, moodNow = 'auto', calmNow = 0.3, calmFx = 0, calmMode = false, calmFilter = 0;
+function stepCalm() {
+  const want = moodNow === 'calm' ? 1 : moodNow === 'lively' ? 0 : calmIn == null ? 0.3 : calmIn;
+  calmNow += (want - calmNow) * ease(0.02);
+  if (calmNow > 0.6) calmMode = true; else if (calmNow < 0.4) calmMode = false;
+  calmFx = smoothstep(0.35, 0.8, calmNow);
+  if (Math.abs(calmFx - calmFilter) > 0.02 || (calmFx !== calmFilter && (calmFx === 0 || calmFx === 1))) {
+    calmFilter = calmFx;
+    cv.style.filter = calmFx ? `saturate(${1 - 0.55 * calmFx}) brightness(${1 - 0.12 * calmFx})` : '';
+  }
+}
 const stage = () => ({ x: 0, y: TOP, w: W, h: H - TOP, cx: W / 2, cy: TOP + (H - TOP) / 2 });
 
 // ---------- smooth timing: the same motion at 60, 144 or 180 Hz ----------
@@ -305,7 +320,7 @@ function field(x, y, k = 1) {
     const age = now() - p.at;
     if (age > SHOCK) continue;
     const ex = sx - p.x, ey = sy - p.y, r = Math.hypot(ex, ey) || 1;
-    const g = Math.exp(-(((r - age * 1100) / 110) ** 2)) * (1 - age / SHOCK) * k;
+    const g = Math.exp(-(((r - age * 1100) / 110) ** 2)) * (1 - age / SHOCK) * k * (1 - 0.6 * calmFx);
     ox += ex / r * 70 * g; oy += ey / r * 70 * g; f = Math.max(f, g * 0.6);
   }
   if (!ox && !oy && !f) return NO_WARP;
@@ -341,7 +356,7 @@ const NO_PUNCH = { s: 1, rot: 0, dy: 0 };
 function punch(wd, t, k = 1) {
   const u = wd ? t - wd.t : -1;
   if (u < 0 || u > 0.6 || !k) return NO_PUNCH;
-  const w = Math.exp(-8 * u) * Math.sin(18 * u) * k;
+  const w = Math.exp(-8 * u) * Math.sin(18 * u) * k * (1 - 0.75 * calmFx);
   return { s: 1 + 0.34 * w, rot: 0.07 * w * (hash(wd.w + wd.t) & 1 ? 1 : -1), dy: -0.12 * w };
 }
 // Applies punch() to whatever is drawn next around (x, y) (inside save()); px = the text size, for the lift.
@@ -357,7 +372,7 @@ function stepKick() {
   let lo = 0, hi = ws.length - 1, i = -1;
   while (lo <= hi) { const m = (lo + hi) >> 1; if (ws[m].t <= t) { i = m; lo = m + 1; } else hi = m - 1; }
   if (i !== kickWord) {
-    if (i > kickWord && i - kickWord <= 2 && clock.playing) kick = Math.min(0.045, kick + (i === 0 || ws[i - 1].end ? 0.03 : 0.01));
+    if (i > kickWord && i - kickWord <= 2 && clock.playing) kick = Math.min(0.045, kick + (i === 0 || ws[i - 1].end ? 0.03 : 0.01) * (1 - 0.75 * calmFx));
     kickWord = i;   // a seek jumps further: no kick
   }
   kick *= 1 - ease(0.1);
@@ -481,21 +496,24 @@ function setLook(i) {
 // Planned from the song's lines and a number that changes every song, so both screens agree, a seek lands on the
 // same look, and the next play of the song gets a different order. `sub` picks the variant inside a look.
 let songSalt = 0, mixSeg = null;
+const CALM_LOOKS = ['constellation', 'ink', 'atlas', 'space'];
 const mixing = () => lockNow < 0 && LOOKS.length > 1 && !isPhone();
 function mixPlan() {
   const P = track.phrases;
-  if (mixPlan.P === P && mixPlan.salt === songSalt) return mixPlan.plan;
-  const r = rng(hash(track.title + ':mix:' + songSalt)), n = LOOKS.length, plan = [];
+  if (mixPlan.P === P && mixPlan.salt === songSalt && mixPlan.calm === calmMode) return mixPlan.plan;
+  const r = rng(hash(track.title + ':mix:' + songSalt)), plan = [];
+  const calmPool = LOOKS.map((l, i) => CALM_LOOKS.includes(l.id) ? i : -1).filter(i => i >= 0);
+  const pool = calmMode && calmPool.length ? calmPool : [...LOOKS.keys()], n = pool.length;   // calm: the quiet looks only
   const starts = P.length ? P.map(p => p.t0 - LEAD) : Array.from({ length: 200 }, (_, i) => i * 8);   // no lyrics: every 8 s
   let next = -Infinity;
   for (const t of starts) {
     if (t < next) continue;
     const recent = plan.slice(-Math.min(2, n - 1)).map(s => s.look), used = i => plan.filter(s => s.look === i).length;
-    const free = [...Array(n).keys()].filter(i => !recent.includes(i)), least = Math.min(...free.map(used));
+    const free = pool.filter(i => !recent.includes(i)), least = Math.min(...free.map(used));
     plan.push({ t, look: pickR(r, free.filter(i => used(i) <= least + 1)), sub: Math.floor(r() * 1e6) });   // the least shown go first
-    next = t + 5 + r() * 5;
+    next = t + (calmMode ? 12 + r() * 8 : 5 + r() * 5);
   }
-  Object.assign(mixPlan, { P, salt: songSalt, plan });
+  Object.assign(mixPlan, { P, salt: songSalt, calm: calmMode, plan });
   return plan;
 }
 function mixLook() {
@@ -511,9 +529,10 @@ function setAccent(c) {
 let lastTs = 0;
 function frame(ts) {
   dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
+  stepCalm();   // before the Mix plan: it picks the pool
   const lk = setLook(mixing() ? mixLook() : lookWant);   // also switches to/from Constellation when the window crosses phone width
   stepMouse(); stepNotch(lk);                                  // these keep real speed; the looks below get slowed dt
-  rate += ((clock.playing ? 1 : 0.1) - rate) * ease(0.04);
+  rate += ((clock.playing ? 1 - 0.3 * calmFx : 0.1) - rate) * ease(0.04);
   dt *= rate; sceneT += dt;
   const T = sceneT;
   if (lk.pre) lk.pre(T);                                       // may snapshot this frame for a crossfade
@@ -540,15 +559,16 @@ function frame(ts) {
       for (const p of shocks) {
         const age = now() - p.at;
         if (age > SHOCK) continue;
-        ctx.globalAlpha = 0.4 * (1 - age / SHOCK); ctx.lineWidth = 2 + 6 * (1 - age / SHOCK);
+        ctx.globalAlpha = 0.4 * (1 - age / SHOCK) * (1 - 0.6 * calmFx); ctx.lineWidth = 2 + 6 * (1 - age / SHOCK);
         ctx.beginPath(); ctx.arc(p.x, p.y, age * 1100, 0, 6.29); ctx.stroke();
       }
       ctx.restore();
     }
   }
-  if (now() - ghostAt < 0.8) {
+  const fade = 0.8 + calmFx;   // calm: slower crossfades
+  if (now() - ghostAt < fade) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1 - (now() - ghostAt) / 0.8; ctx.drawImage(ghost, 0, 0);
+    ctx.globalAlpha = 1 - (now() - ghostAt) / fade; ctx.drawImage(ghost, 0, 0);
     ctx.restore();
   }
   drawNotch();
@@ -587,6 +607,7 @@ async function poll() {
       songSalt = s.songs || 0;   // a new song or N: a new mix plan and new layouts
       LOOKS.forEach(l => l.poll && l.poll(s));
       lockNow = s.lock; colorNow = s.color;
+      moodNow = s.mood || 'auto'; calmIn = s.calm == null ? null : +s.calm;   // missing (Android): auto, 0.3
     }
     markNotch();
     if (s.rev !== rev) {
@@ -625,6 +646,13 @@ function buildNotch() {
   $('#colors').innerHTML = '<div class="chip plain" data-c="-1">Cycle</div>' + PALETTE.map((c, i) =>
     `<div class="dot" data-c="${i}" style="background:${c}" title="${c}"></div>`).join('');
   $('#looks').onclick = e => { const el = e.target.closest('[data-i]'); if (el) pickLook(+el.dataset.i); };
+  $('#moods').onclick = e => {   // Auto follows app.py's mood model; Calm / Lively override it
+    const el = e.target.closest('[data-mood]');
+    if (!el) return;
+    pickedAt = now(); moodNow = el.dataset.mood;
+    if (api.set_mood) api.set_mood(moodNow);
+    markNotch();
+  };
   $('#media').onclick = e => {
     const el = e.target.closest('[data-m]');
     if (!el) return;
@@ -703,6 +731,7 @@ function markNotch() {
     el.classList.toggle('cur', lockNow < 0 && i === look);
   });
   document.querySelectorAll('#colors [data-c]').forEach(el => el.classList.toggle('on', +el.dataset.c === colorNow));
+  document.querySelectorAll('#moods [data-mood]').forEach(el => el.classList.toggle('on', el.dataset.mood === moodNow));
   if (now() - mediaAt > 1.5) $('#media').classList.toggle('playing', !!clock.playing);   // after a tap, give the player time to answer
 }
 

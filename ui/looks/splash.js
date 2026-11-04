@@ -231,7 +231,7 @@
       while (i + 1 < ws.length && ws[i + 1].t <= d.t) i++;
       if (i !== lastWord) {
         if (i > lastWord && i - lastWord <= 2 && !cur.card) spawn(W * (0.2 + ((ws[i].t * 7.3) % 1) * 0.6), stage().cy + (((ws[i].t * 3.1) % 1) - 0.5) * stage().h * 0.5,
-                                                                  2 + (i % 3), cur.L.sch.blob, Math.min(W, H) * 0.035, hash(ws[i].w + ws[i].t));
+                                                                  calmMode ? 1 : 2 + (i % 3), cur.L.sch.blob, Math.min(W, H) * 0.035, hash(ws[i].w + ws[i].t));
         lastWord = i;
       }
       drawBlobs(T, sceneFade);

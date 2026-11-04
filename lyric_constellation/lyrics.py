@@ -167,11 +167,16 @@ def fetch_lyrics(artist, title, duration=None):
     return {**data, "file": str(f)}
 
 
-def cover_url(artist, title):
-    """1200 px album art from the iTunes search API (players only hand Windows a small thumbnail).
-    Only trusts a result by the same artist, so an unknown song keeps its own thumbnail."""
+def itunes_song(artist, title, country="US"):
+    """The iTunes catalogue's entry for a song (art, 30 s preview, genre), or None.
+    Only trusts a result by the same artist, so an unknown song isn't mistaken for a namesake."""
     res = http_json("https://itunes.apple.com/search?" + urllib.parse.urlencode(
-        {"term": f"{artist} {title}", "entity": "song", "limit": 5}))["results"]
+        {"term": f"{artist} {title}", "entity": "song", "limit": 5, "country": country}))["results"]
     a = artist.lower()
-    hit = next((r for r in res if a and (a in r["artistName"].lower() or r["artistName"].lower() in a)), None)
+    return next((r for r in res if a and (a in r["artistName"].lower() or r["artistName"].lower() in a)), None)
+
+
+def cover_url(artist, title):
+    """1200 px album art from the iTunes search API (players only hand Windows a small thumbnail)."""
+    hit = itunes_song(artist, title)
     return hit["artworkUrl100"].replace("100x100", "1200x1200") if hit else None

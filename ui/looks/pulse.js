@@ -427,7 +427,7 @@
       if (d.prev) drawExit(d.prev, d.t, T, (T - d.prev.out) / this.exit);
       drawScene(cur, d.t, T, sceneFade);
       // shatter once when a big line-end word lands
-      const hit = !cur.card && L.shatter && L.items.find(it => it.wd.end && sung(it.wd, d.t) > 0);
+      const hit = !cur.card && L.shatter && !calmMode && L.items.find(it => it.wd.end && sung(it.wd, d.t) > 0);
       if (hit && !cur.shattered) { cur.shattered = true; font(hit.px, hit.it); shatter(hit.x + hit.w / 2, hit.y - hit.px * 0.4, T); }
       drawShards(T);
       drawEdges(cur, T, sceneFade);

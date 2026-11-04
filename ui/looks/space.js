@@ -121,7 +121,7 @@
     return out;
   }
   function build(ph, r) {
-    const S = stage(), ws = ph.words, n = ws.length, flash = n <= 6 && r() < 0.27;
+    const S = stage(), ws = ph.words, n = ws.length, flash = n <= 6 && r() < 0.27 && !calmMode;   // calm: no cut-ins
     const last = ws[n - 1], thinOf = flash ? () => false : wd => wd !== last && wd.w.length > 1 && r() < 0.32;
     const thin = new Map(ws.map(wd => [wd, thinOf(wd)])), isThin = wd => thin.get(wd);
     const L = { flash: flash ? pickR(r, FLASH) : null, seed: Math.floor(r() * 1e6), items: [] };
