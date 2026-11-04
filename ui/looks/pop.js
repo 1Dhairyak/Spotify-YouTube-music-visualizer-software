@@ -1,6 +1,7 @@
 // Look 3: Pop Colors (from The Chainsmokers "Closer" kinetic-typography video).
 // Flat bold backgrounds that change every phrase with corner/stripe wipes, justified blocks of mixed fonts,
-// hatched 3D drop shadows, words written around a circle, sunburst shouts and handwritten words with paint splats.
+// hatched 3D drop shadows, words written around a circle, sunburst shouts and handwritten words with paint splats,
+// solid 3D slab words that tumble in and keep turning, and small lead-in lines over one giant word with a hard shadow.
 (() => {
   const SCHEMES = [   // background, two text colors, hatch-shadow color (all picked from the video)
     { bg: '#CC1A4A', a: '#FFF3D6', b: '#F4C64E', sh: '#F0A93A' },
@@ -49,8 +50,10 @@
     const S = stage(), ws = ph.words, n = ws.length, sch = schemeOf(ph.i);
     const chars = ws.map(w => w.w).join(' ').length;
     let type;
-    if (n === 1) type = r() < 0.55 ? 'shout' : 'script';
-    else if (n === 2) type = pickR(r, ['shout', 'block', 'script']);
+    const lastLong = ws[n - 1].w.length >= 4;
+    if (n === 1) type = pickR(r, ['shout', 'script', 'cube', 'shout']);
+    else if (n === 2) type = pickR(r, ['shout', 'block', 'script', 'cube']);
+    else if (n <= 6 && lastLong && r() < 0.3) type = 'pretty';
     else if (n <= 7 && chars <= 34 && r() < 0.28) type = 'ring';
     else if (n <= 4 && r() < 0.25) type = 'script';
     else type = 'block';
@@ -109,6 +112,21 @@
         y += row.h + gap * k;
       }
       Object.assign(L, { cx, cy, rot: 0 });   // always upright: sideways blocks read badly
+    } else if (type === 'cube') {   // the line as one solid slab block that tumbles in, with a small twin behind it
+      const s = ws.map(w => caps(w.w)).join(' '), m = capsBox(s, FONTS.as(100)), px = Math.min(100 * W * 0.46 / m.w, S.h * 0.42);
+      Object.assign(L, { cx: S.cx, cy: S.cy, rot: 0, cube: { s, px, w: m.w * px / 100, h: m.h * px / 100, wd: ws[0], spin: r() < 0.5 ? 1 : -1 } });
+    } else if (type === 'pretty') {   // small lead-in rows, left-aligned, over a giant lowercase last word
+      const big = ws[n - 1].w.toLowerCase(), lead = ws.slice(0, -1);
+      const gm = capsBox(big, FONTS.as(100)), gpx = Math.min(100 * W * 0.5 / gm.w, S.h * 0.4), gw = gm.w * gpx / 100;
+      const lpx = Math.min(gpx * 0.3, S.h * 0.07), x0 = -gw / 2;
+      ctx.font = FONTS.js(lpx);
+      const rows = lead.length > 2 ? [lead.slice(0, Math.ceil(lead.length / 2)), lead.slice(Math.ceil(lead.length / 2))] : [lead];
+      rows.forEach((rw, i) => {
+        let x = x0 + i * lpx * 0.6;
+        const y = -gpx * 0.55 - (rows.length - 1 - i) * lpx * 1.05;
+        for (const wd of rw) { const s2 = caps(wd.w), w = ctx.measureText(s2).width; L.items.push({ s: s2, wd, x, y, w, h: lpx * 0.8, font: FONTS.js(lpx), color: sch.b, px: lpx }); x += w + ctx.measureText(' ').width; }
+      });
+      Object.assign(L, { cx: S.cx, cy: S.cy + gpx * 0.1, rot: -0.03, pretty: { s: big, px: gpx, w: gw, x: x0, y: gpx * 0.3, wd: ws[n - 1] } });
     } else if (type === 'shout') {
       const s = ws.map(w => caps(w.w)).join(' '), f = n === 1 ? 'lg' : pickR(r, ['lg', 'as']);
       const m = capsBox(s, FONTS[f](100)), px = Math.min(100 * W * 0.42 / m.w, S.h * 0.5);
@@ -208,7 +226,7 @@
       return;
     }
     const s = backOut(p) * 0.65 + 0.35, cx = it.x + it.w / 2, cy = it.y - it.h / 2;
-    ctx.save(); warp(cx, cy);   // pushed aside and magnified by the mouse
+    ctx.save(); warp(cx, cy); punchAt(it.wd, t, cx, cy, it.h);   // pushed aside by the mouse; pops as it's sung
     ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy);
     ctx.globalAlpha = a * clamp(p * 2, 0, 1);
     if (it.ext) {   // hatched 3D drop: the word stamped down-right, filled with diagonal stripes
@@ -288,6 +306,33 @@
     ctx.globalAlpha = a; ctx.fillText(L.title, S.cx, S.cy + L.px * 0.35); ctx.restore();
   }
 
+  function drawCube(L, t, T, a) {   // solid extrusion whose direction swings as the block turns
+    const C = L.cube, p = sung(C.wd, t, 0.5), e = backOut(p);
+    if (p <= 0) return;
+    const age = Math.max(0, t - C.wd.t), ang = 0.75 + C.spin * Math.sin(age * 1.1) * 0.55;
+    [[0.32, C.w * 0.55, C.h * 0.55, 0.5], [1, 0, 0, 1]].forEach(([k, ox, oy, al]) => {   // the small twin first, then the block
+      const depth = Math.max(6, C.px * 0.16) * k, rot = (1 - e) * -0.7 * C.spin + Math.sin(age * 0.9) * 0.05 * k;
+      ctx.save(); ctx.translate(ox + (1 - e) * -W * 0.2 * C.spin, oy); warp(0, 0, 0.8); punchAt(C.wd, t, 0, 0, C.px * k, 0.5);
+      ctx.rotate(rot); ctx.scale((0.4 + 0.6 * e) * k, (0.4 + 0.6 * e) * k);
+      ctx.font = FONTS.as(C.px); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.globalAlpha = a * al * Math.min(1, p * 2);
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      for (let d = depth / k; d > 0; d -= 2) { ctx.fillStyle = d > depth / k * 0.85 ? '#8E8A86' : '#D9D3CC'; ctx.fillText(C.s, dx * d, dy * d); }
+      ctx.fillStyle = L.sch.bg === '#CC1A4A' ? '#F6C945' : '#C8283E'; ctx.fillText(C.s, 0, 0);
+      ctx.restore();
+    });
+  }
+  function drawPretty(L, t, T, a) {   // the giant word pops up with a hard offset shadow growing under it
+    const G = L.pretty, p = sung(G.wd, t, 0.35);
+    if (p <= 0) return;
+    const e = backOut(p), cx = G.x + G.w / 2, cy = G.y - G.px * 0.3, off = G.px * 0.06 * easeOut(p);
+    ctx.save(); warp(cx, cy, 0.7); punchAt(G.wd, t, cx, cy, G.px, 0.6);
+    ctx.translate(cx, cy); ctx.scale(e, e); ctx.translate(-cx, -cy);
+    ctx.font = FONTS.as(G.px); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.globalAlpha = a * Math.min(1, p * 2);
+    ctx.fillStyle = L.sch.a; ctx.fillText(G.s, G.x + off, G.y + off);
+    ctx.fillStyle = L.sch.b === L.sch.bg ? L.sch.sh : L.sch.b; ctx.fillText(G.s, G.x, G.y);
+    ctx.restore();
+  }
+
   let currentSch = CARD;
   function drawScene(sc, t, T, a) {
     const L = sc.L;
@@ -296,6 +341,8 @@
     ctx.save(); ctx.translate(L.cx, L.cy); ctx.rotate(L.rot);
     if (L.burst) drawBurst(L, t, T, a);
     if (L.splats) drawSplats(L, t, a);
+    if (L.cube) drawCube(L, t, T, a);
+    if (L.pretty) drawPretty(L, t, T, a);
     for (const it of L.items) drawWord(it, t, T, a);
     ctx.restore();
   }

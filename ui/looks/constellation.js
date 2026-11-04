@@ -288,10 +288,21 @@ function edgeGlow(F, accentQ) {
   ctx.globalAlpha = a0;
 }
 let tailX = new Float64Array(0), tailY = new Float64Array(0);   // the comet's points, reused frame to frame
+// The lyrics' pace: words sung per second in the 8 s around now, as a speed factor for the light (1 = a normal
+// ~1.8 words/s; a fast rap laps up to 3x quicker, sparse or instrumental parts drift at 0.4x). No lyrics: 1.
+function pace() {
+  const ws = track.words, t = songTime();
+  if (!ws.length) return 1;
+  let lo = 0, hi = ws.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (ws[m].t < t - 4) lo = m + 1; else hi = m; }
+  let n = 0;
+  for (let i = lo; i < ws.length && ws[i].t <= t + 4; i++) n++;
+  return clamp(n / 8 / 1.8, 0.4, 3);
+}
 function border(T) {
   updateTouch(T);
   ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);   // screen-fixed: no parallax
-  const F = frameRect(T), len = TAIL * F.Pb, N = isPhone() ? 16 : 24, base = F.Pb / LAP;
+  const F = frameRect(T), len = TAIL * F.Pb, N = isPhone() ? 16 : 24, base = F.Pb / LAP * pace();
   // where along the edge is the mouse? the light speeds up to reach it, then lingers there
   let want = base;
   if (mouse.inside && mouse.presence > 0.2 && now() - mouse.at < 2.5) {
@@ -398,6 +409,7 @@ function draw(T) {
     ctx.globalAlpha = a * (isCur ? 1 : 0.75 + 0.25 * Math.sin(T * 2 + n.seed));
     if (isCur) { glowAt(p.x, p.y, r * 3.2, haloColor(), a * 0.55); ctx.globalAlpha = a; }
     (st.marker || sparkle)(p.x, p.y, r, isCur, a);
+    if (T - n.born < 0.7) flare(p.x, p.y, T - n.born, a * (n.end ? 1 : 0.6));   // a word just sung: its star flares
 
     // Label above the star.
     const grow = 0.85 + 0.15 * easeOut((T - n.born) / 0.25);
@@ -411,7 +423,8 @@ function draw(T) {
     const ly = Math.max(p.y - r - 6, TOP - 16 + size);   // above its star, but never up under the song title
     const inside = clamp((Math.min(p.x, W - p.x) + 20) / 40, 0, 1);   // a star scrolled past a side: its label fades out
     ctx.save();
-    if (p.s) { ctx.translate(lx, ly); ctx.scale(p.s, p.s); ctx.translate(-lx, -ly); }   // the lens
+    const pk = punch({ w: n.w, t: n.born }, T, n.end ? 1 : 0.6).s * (p.s || 1);   // the lens, and the pop as it's sung
+    if (pk !== 1) { ctx.translate(lx, ly); ctx.scale(pk, pk); ctx.translate(-lx, -ly); }
     if (s < 0.5) drawHalo(n.w, font, size, haloColor(), 18, lx, ly, 'center', 'bottom', a * inside * (1 - 2 * s));
     ctx.globalAlpha = a * inside * (1 - (isCur ? 0.1 : 0.4) * s);
     ctx.fillText(n.w, lx, ly);
@@ -421,7 +434,33 @@ function draw(T) {
   ctx.restore();
 }
 
-// ---------- styles (T or 1-6 to switch; delete an entry to drop a style) ----------
+// A star's flare as its word is sung: a ring opening out and four long rays that shrink back.
+function flare(x, y, age, a) {
+  const f = age / 0.7, R = 14 + 70 * easeOut(f);
+  ctx.save(); ctx.globalAlpha = a * 0.5 * (1 - f); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, R, 0, 6.29); ctx.stroke();
+  ctx.globalAlpha = a * 0.8 * (1 - f); ctx.lineWidth = 1.2;
+  const L = 60 * (1 - f) + 10;
+  for (let k = 0; k < 4; k++) { const t = k * 1.5708 + 0.785; line({ x, y }, { x: x + Math.cos(t) * L, y: y + Math.sin(t) * L }); }
+  ctx.restore();
+}
+
+// ---------- styles (T or 1-7 to switch; delete an entry to drop a style) ----------
+
+// Spiral: words take their places on a sunflower spiral (each one a golden angle on from the last) that slowly turns.
+function spiralPlace(scene) { return { x: 0, y: 0, i: scene.length }; }
+const spiralR = () => Math.min(W * 0.28, (H - TOP) * 0.42);
+function spiralPos(n, T) {
+  const c = center(), a = n.i * 2.39996 + T * 0.08, r = spiralR() * Math.sqrt((n.i + 1) / (SCENE_MAX + 1));
+  return { x: c.x + Math.cos(a) * r * 1.5, y: c.y + Math.sin(a) * r };
+}
+function spiralUnder(T) {
+  const c = center(), R = spiralR();
+  ctx.globalAlpha = 0.09 * sceneFade; ctx.beginPath();
+  for (let k = 0; k <= 160; k++) { const f = k / 160, a = f * 6 * Math.PI + T * 0.08; ctx[k ? 'lineTo' : 'moveTo'](c.x + Math.cos(a) * R * f * 1.5, c.y + Math.sin(a) * R * f); }
+  ctx.stroke();
+  ctx.globalAlpha = 0.6 * sceneFade; star(c.x, c.y, 4);
+}
 
 // Low-poly mesh: link to the 2 nearest stars and tint each triangle.
 function meshLink(scene, prev, n) {
@@ -557,6 +596,7 @@ const STYLES = [
   { name: 'Orbit', place: orbitPlace, link: chainLink, pos: orbitPos, under: orbitUnder },
   { name: 'Wave', place: wavePlace, link: chainLink, pos: wavePos, tick: waveTick, marker: triMarker },
   { name: 'Shatter grid', place: gridPlace, link: chainLink, under: gridUnder },
+  { name: 'Spiral', place: spiralPlace, link: chainLink, pos: spiralPos, under: spiralUnder },
 ];
 
 // Styles take turns every STYLE_EVERY seconds of the song; T / 1-6 shift where the rotation is.
@@ -574,7 +614,7 @@ LOOKS.push({
   id: 'constellation',
   name: 'Constellation',
   reset,
-  pre(T) { setStyle(styleBase + styleSlot()); },
+  pre(T) { setStyle(mixing() && mixSeg ? mixSeg.sub : styleBase + styleSlot()); },   // mixing: a random style each turn
   frame(T) { step(); draw(T); },
   overlay(T) { border(T); },          // screen-fixed: the edge doesn't lean with the mouse
   busyNotch: () => cometNearNotch,   // the notch stays until the light has gone round it

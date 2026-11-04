@@ -2,6 +2,8 @@
 // Two scenes that take turns every few phrases: a teal night sky with drifting dust and clouds, where thin
 // letter-spaced words wave in and the line-end word assembles from flying letters (candy-striped, white or teal);
 // and a generated city map the camera glides and turns over, with each line written along a road and a pin dropping.
+// Sky lines sometimes lock up like a poster (the lead words turned on end beside the big word, a bar, the rest small
+// to its right), and a round letter in the big word (O, Q, 0) can light up as a glowing moon.
 (() => {
   const thin = px => `300 ${px}px Bahnschrift, "Josefin Sans", sans-serif`;
   const bold = px => `${px}px "League Gothic"`;
@@ -153,6 +155,21 @@
       y += pxE * 0.86;
       L.emph = { wd: emph, s: emS, x, y, px: pxE, style: pickR(r, ['candy', 'candy', 'white', 'teal']),
                  scatter: [...emS].map(() => ({ dx: (r() - 0.5) * W * 0.5, dy: (r() - 0.5) * H * 0.4, rot: (r() - 0.5) * 3, d: r() * 0.15 })) };
+      const mi = emS.search(/[OQ0]/);
+      if (mi >= 0 && r() < 0.6) L.emph.moon = mi;
+      if (lead.length && r() < 0.35) {   // lockup: lead words reading up the left side, a bar, the small words over the big word
+        const pxE2 = Math.min(100 * W * 0.34 / measure(emS, bold(100)), S.h * 0.3), eW = measure(emS, bold(pxE2));
+        ctx.letterSpacing = '0.08em';
+        const pxL2 = Math.min(pxE2 * 0.24, 100 * pxE2 * 0.9 / measure(leadS, thin(100)));
+        ctx.letterSpacing = '0px';
+        const pxM2 = midS ? Math.min(pxE2 * 0.3, 100 * eW / measure(midS, round(100))) : 0;
+        const tot = pxL2 * 1.2 + 16 + eW, x0 = S.cx - tot / 2, base = S.cy + pxE2 * 0.36 + pxM2 * 0.5, ex = x0 + pxL2 * 1.2 + 16;
+        L.lead = { words: lead, x: 0, y: 0, px: pxL2, vx: x0 + pxL2, vy: base };
+        Object.assign(L.emph, { x: ex, y: base, px: pxE2 });
+        L.emph.scatter = [...emS].map(() => ({ dx: (r() - 0.5) * W * 0.5, dy: (r() - 0.5) * H * 0.4, rot: (r() - 0.5) * 3, d: r() * 0.15 }));
+        if (pxM2) L.mid = { words: mid, x: ex + 4, y: base - pxE2 * 0.86, px: pxM2, s: midS };
+        L.bar = { x: x0 + pxL2 * 1.2 + 4, y0: base - pxE2 * 0.8 - pxM2, y1: base };
+      }
       L.clouds = r() < 0.55 ? [0, 1, 2].map(() => ({ x: r() * W, y: S.y + r() * S.h, s: S.h * (0.06 + r() * 0.08), v: (r() - 0.3) * 18 })) : [];
     } else {
       makeWorld();
@@ -198,7 +215,7 @@
     }
     ctx.letterSpacing = '0px';
   }
-  function emphasis(E, x, y, px, t0, t, a, style, s) {
+  function emphasis(E, x, y, px, t0, t, a, style, s, moon = -1) {
     ctx.font = bold(px); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     const fill = style === 'candy' ? candyFill() : style === 'white' ? '#FFFFFF' : '#3DBFA8';
     let cx = x;
@@ -206,9 +223,17 @@
       const w = ctx.measureText(ch).width, sc = E[i] || { dx: 0, dy: 0, rot: 0, d: 0 };
       const p = easeOut((t - t0 - sc.d + 0.1) / 0.55);
       if (p > 0) {   // each letter flies in from its own scattered spot
-        ctx.save(); warp(cx + w / 2, y - px * 0.35); ctx.translate(cx + w / 2 + sc.dx * (1 - p), y + sc.dy * (1 - p)); ctx.rotate(sc.rot * (1 - p));
+        ctx.save(); warp(cx + w / 2, y - px * 0.35); punchAt({ w: s, t: t0 + 0.45 }, t, x + textW(s, bold(px)) / 2, y - px * 0.35, px, 0.5);
+        ctx.translate(cx + w / 2 + sc.dx * (1 - p), y + sc.dy * (1 - p)); ctx.rotate(sc.rot * (1 - p));
         ctx.scale(0.4 + 0.6 * p, 0.4 + 0.6 * p);
         ctx.globalAlpha = a * clamp(p * 1.6, 0, 1); ctx.fillStyle = fill;
+        if (i === moon) {   // the round letter as a glowing moon, breathing
+          const R = px * 0.3 * (1 + 0.04 * Math.sin(sceneT * 2.2)), cy = -px * 0.36;
+          glowAt(0, cy, R * 3.4, 'rgb(255,250,225)', a * 0.55 * p); ctx.fillStyle = '#FFFBEA'; ctx.beginPath(); ctx.arc(0, cy, R, 0, 6.29); ctx.fill();
+          ctx.globalAlpha *= 0.12; ctx.fillStyle = '#8A8060';
+          for (const [mx, my, mr] of [[-0.3, -0.2, 0.22], [0.25, 0.3, 0.16]]) { ctx.beginPath(); ctx.arc(mx * R, cy + my * R, mr * R, 0, 6.29); ctx.fill(); }
+          ctx.restore(); cx += w; return;
+        }
         if (style === 'candy') { const f0 = ctx.fillStyle; ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillText(ch, -w / 2 + 1, 3); ctx.fillStyle = f0; }
         ctx.fillText(ch, -w / 2, 0); ctx.restore();
       }
@@ -219,10 +244,17 @@
   function drawSky(sc, t, T, a) {
     const L = sc.L, c = SKY[L.tone];
     for (const cl of L.clouds || []) cloud(cl.x + (T - sc.at) * cl.v, cl.y, cl.s, a * 0.95 * easeOut((T - sc.at) / 0.6));
-    if (L.lead) waveWords(L.lead.words, L.lead.x, L.lead.y, L.lead.px, t, T, a * 0.9, c[3], thin(L.lead.px), '0.08em');
+    if (L.lead && L.lead.vx !== undefined) {   // lockup: the lead words read upwards beside the big word
+      ctx.save(); ctx.translate(L.lead.vx, L.lead.vy); ctx.rotate(-Math.PI / 2);
+      waveWords(L.lead.words, 0, 0, L.lead.px, t, T, a * 0.9, c[3], thin(L.lead.px), '0.08em'); ctx.restore();
+    } else if (L.lead) waveWords(L.lead.words, L.lead.x, L.lead.y, L.lead.px, t, T, a * 0.9, c[3], thin(L.lead.px), '0.08em');
+    if (L.bar) {   // the thin bar grows down between the big word and the rest
+      const f = easeOut((T - sc.at) / 0.5);
+      ctx.globalAlpha = a * 0.8; ctx.fillStyle = c[3]; ctx.fillRect(L.bar.x, L.bar.y0, 3, (L.bar.y1 - L.bar.y0) * f);
+    }
     if (L.mid) waveWords(L.mid.words, L.mid.x, L.mid.y, L.mid.px, t, T, a, '#FFFFFF', round(L.mid.px), '0px', true);
     const E = L.emph;
-    emphasis(E.scatter, E.x, E.y, E.px, E.wd.t, t, a, E.style, E.s);
+    emphasis(E.scatter, E.x, E.y, E.px, E.wd.t, t, a, E.style, E.s, E.moon);
   }
 
   function drawMapText(sc, t, T, a) {
@@ -233,7 +265,7 @@
     let x = -L.len / 2;
     for (const wd of L.words) {
       const s = caps(wd.w), w = ctx.measureText(s).width, p = sung(wd, t, 0.2);
-      ctx.save(); warp(x + w / 2, 0);   // road words are pushed aside and magnified by the mouse too
+      ctx.save(); warp(x + w / 2, 0); punchAt(wd, t, x + w / 2, 0, L.px, 0.6);   // pushed aside by the mouse, pops when sung
       ctx.globalAlpha = a * (0.45 + 0.55 * p);
       drawText(textImage(s, road(L.px), p > 0 ? { stroke: '#FFFFFF', lw: 7, fill: '#2FA88A' } : { stroke: '#3FBF9F', lw: 7, fill: '#16302A' }, 2), x, 0, 'left', 'middle');
       if (wd.end && p > 0) {   // a map pin drops onto the line-end word

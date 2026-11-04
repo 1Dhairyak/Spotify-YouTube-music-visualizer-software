@@ -30,14 +30,14 @@ class Api:
         return {"rev": p.rev, "pos": p.now(), "playing": p.playing, "status": p.status,
                 "dual": self._dual, "stars_on": self._cfg["stars_on"], "style": self._cfg["style"],
                 "look": self._cfg["lock"] if self._cfg["lock"] >= 0 else self._cfg["look"],
-                "lock": self._cfg["lock"], "color": self._cfg["color"]}
+                "lock": self._cfg["lock"], "color": self._cfg["color"], "songs": self._cfg["look"]}
 
     def next_look(self):
         self._cfg["look"] += 1
         self._save()
 
     def set_lock(self, i):
-        """From the notch: -1 = mix (a new look every song), else stay on look i."""
+        """From the notch: -1 = mix (looks take turns every few lines), else stay on look i."""
         i = int(i)
         if i < 0 <= self._cfg["lock"]:
             self._cfg["look"] = self._cfg["lock"]  # mixing carries on from the look on screen
