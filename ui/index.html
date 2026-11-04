@@ -71,10 +71,6 @@
   [data-look=ink] #title, [data-look=ink] #cover .t { font-family: 'Permanent Marker'; text-transform: uppercase; font-weight: 400; }
   [data-look=ink] #artist, [data-look=ink] #cover .a { font-family: 'Permanent Marker'; text-transform: uppercase; font-size: 14px; }
   [data-look=ink] #cover .a { font-size: clamp(16px, 1.4vw, 26px); }
-  [data-look=atlas] #title, [data-look=atlas] #cover .t { font-family: Bahnschrift, 'Segoe UI', sans-serif; font-weight: 700;
-    font-stretch: 75%; text-transform: uppercase; letter-spacing: .02em; }
-  [data-look=atlas] #artist, [data-look=atlas] #cover .a { font-family: Bahnschrift, 'Segoe UI', sans-serif; font-weight: 300;
-    text-transform: uppercase; letter-spacing: .2em; }
   [data-look=ink] #art, [data-look=pop] #art { border-radius: 6px; }
 
   /* The notch: a black pill at the top center that opens, on hover, into the look and color pickers. The black shape
@@ -497,7 +493,7 @@ function setLook(i) {
 // Planned from the song's lines and a number that changes every song, so both screens agree, a seek lands on the
 // same look, and the next play of the song gets a different order. `sub` picks the variant inside a look.
 let songSalt = 0, mixSeg = null;
-const CALM_LOOKS = ['constellation', 'ink', 'atlas', 'space'];
+const CALM_LOOKS = ['constellation', 'ink', 'space'];
 const mixing = () => lockNow < 0 && LOOKS.length > 1 && !isPhone();
 function mixPlan() {
   const P = track.phrases;
@@ -637,7 +633,6 @@ const SWATCH = { constellation: 'radial-gradient(circle at 60% 40%, #E8D44D 0 22
                  pulse: 'linear-gradient(135deg, #FF1F8E, #F6C4DA 55%, #2A0F1C)',
                  pop: 'conic-gradient(#CC1A4A 0 33%, #3FF0C3 0 66%, #EECB5B 0)',
                  ink: 'linear-gradient(135deg, #EEEBE3 50%, #1A1916 50%)',
-                 atlas: 'linear-gradient(135deg, #0F5A52, #04201D 55%, #C8DE78)',
                  space: 'radial-gradient(circle at 70% 30%, #F7A6C9 0 18%, #2A0E78 22%, #3A0A5A)',
                  splash: 'conic-gradient(#2BFFC0 0 40%, #E8096E 0 70%, #3D0A91 0)' };
 let lockNow = -1, colorNow = -1, pickedAt = -9, mediaAt = -9, lastState = {};
@@ -769,7 +764,6 @@ addEventListener('keydown', e => {
 <script src="looks/pulse.js"></script>
 <script src="looks/pop.js"></script>
 <script src="looks/ink.js"></script>
-<script src="looks/atlas.js"></script>
 <script src="looks/space.js"></script>
 <script src="looks/splash.js"></script>
 <script>

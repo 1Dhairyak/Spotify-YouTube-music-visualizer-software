@@ -49,7 +49,7 @@ files and CI runs ruff and pytest.
   `reset`, `exit`) with a 40-line example look.
 - JS errors get forwarded to the Python log (`api.log`), so a broken screen like the notch bug leaves a trace.
 - **Done when:** every file is under ~400 lines, has a header comment saying what it does, and the app looks and
-  behaves the same (screenshots of all 7 looks before and after).
+  behaves the same (screenshots of all 6 looks before and after).
 
 ### Phase 4: fast and light
 - **Whisper off by default**, with a "Learn word timing" switch in the notch. The model loads only when the switch is
@@ -147,4 +147,4 @@ measurements leave anyone's PC.
 | B3 Retrain loop | B1, B2 | small |
 
 Rules for every phase: the app must look and behave the same unless the phase says otherwise. Each phase checks all
-7 looks in the real app window, not only the preview. ruff and pytest stay green, and each phase is one PR.
+6 looks in the real app window, not only the preview. ruff and pytest stay green, and each phase is one PR.

@@ -10,11 +10,11 @@
 **Android 8+:** open the `.apk` on your phone to install it (allow installing from your browser or files app when asked), then allow
 the *microphone*: play a song out loud nearby and the app recognizes it (like Shazam) within about 10 seconds, then
 listens again every 20 seconds to stay in time and notice a new song or a pause. It only listens while it is open on
-screen. The Android app has the Constellation look with its color picker; the Windows app has all 7 looks.
+screen. The Android app has the Constellation look with its color picker; the Windows app has all 6 looks.
 
 A lightweight Windows app that turns whatever you're playing on Spotify, YouTube Music or YouTube into time-synced kinetic-typography lyrics. It runs full screen and uses a second monitor when you have one.
 
-Each song gets the next of 7 looks, in turn (or pick **Mix** in the notch to switch every few lines):
+Each song gets the next of 6 looks, in turn (or pick **Mix** in the notch to switch every few lines):
 
 | Look | Style |
 |---|---|
@@ -22,7 +22,6 @@ Each song gets the next of 7 looks, in turn (or pick **Mix** in the notch to swi
 | Pink Poster | Morphing pink gradients, extra-wide outlined type that fills in, echo rows, a lettered sphere, shattering glass, words split in two 3D halves, a framed card with the line running round it |
 | Pop Colors | Flat bold colors with wipes, justified blocks of mixed fonts, hatched 3D shadows, ring text, handwriting with splats, tumbling 3D slab words, small lead-ins over a giant word |
 | Ink Sketch | Paper and blackboard with ink floods, brush caps, hand-drawn bubbles, signboard, bulbs, footsteps, a glass that fills as the line is sung, a speech balloon |
-| Night Map | Teal night sky with clouds and flying letters, poster lockups with a word on end, an O that lights up as a moon, and a city map where each line runs along a road |
 | Deep Space | Indigo sky with stars, a ringed planet and comets; thin and bold caps that drop, squeeze and slide in; warp streaks; flat color cut-ins with speed lines and a one-word band; RGB-split exits |
 | Splash | Flat mint, indigo and magenta with brush-swipe and flood changes, boiling hand lettering, giant dry-brush words, words round a circle, word stairs and flying ink blobs |
 
