@@ -375,6 +375,10 @@ function stepKick() {
   kick *= 1 - ease(0.1);
 }
 const caps = s => s.toUpperCase();
+// The pieces of a text to animate one at a time: letters (an accent stays on its letter), but whole words in scripts
+// whose letters join up (Hindi, Punjabi, Urdu...), where a split would break the writing. Spaces are pieces too.
+const JOINED = /[֐-ࣿऀ-෿יִ-﷿ﹰ-﻿]/, GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+const splitText = s => JOINED.test(s) ? s.split(/( +)/).filter(Boolean) : Array.from(GRAPHEMES.segment(s), x => x.segment);
 
 // Largest font size (px) at which `text` fits maxW, capped at maxPx. font(px) returns a CSS font string.
 function fitPx(text, font, maxW, maxPx, stretch) {
@@ -452,13 +456,18 @@ function direct(lk, T) {
   const card = !ph || (t > ph.tEnd + 2.5 && ph.t1 - ph.tEnd > GAP && ph.t1 - t > 1.2);
   const key = (card ? 'card' : 'ph') + k;
   const st = lk.st || (lk.st = {});
-  if (!st.cur || st.cur.key !== key || st.cur.W !== W || st.cur.TOP !== Math.round(TOP)) {
+  if ((!st.cur || st.cur.key !== key || st.cur.W !== W || st.cur.TOP !== Math.round(TOP)) && st.failed !== key) {
     const resized = st.cur && st.cur.key === key;
-    if (st.cur && !resized) { st.prev = st.cur; st.prev.out = T; }
-    st.cur = { key, k, card, ph, at: resized ? st.cur.at : T, W, TOP: Math.round(TOP),
-               r: rng(hash(track.title + ':' + key + ':' + songSalt + ':' + (mixSeg ? mixSeg.sub : 0))) };
-    st.cur.L = card ? lk.buildCard(st.cur) : lk.build(ph, st.cur.r, st.cur);
-    if (!resized && lk.enter) lk.enter(st.cur, st.prev, T);
+    const next = { key, k, card, ph, at: resized ? st.cur.at : T, W, TOP: Math.round(TOP),
+                   r: rng(hash(track.title + ':' + key + ':' + songSalt + ':' + (mixSeg ? mixSeg.sub : 0))) };
+    try {
+      next.L = card ? lk.buildCard(next) : lk.build(ph, next.r, next);
+      if (st.cur && !resized) { st.prev = st.cur; st.prev.out = T; }
+      st.cur = next;
+      if (!resized && lk.enter) lk.enter(st.cur, st.prev, T);
+    } catch (e) {   // a line this look can't lay out: the last one stays on screen, tried once, not every frame
+      console.error(e); st.failed = key;
+    }
   }
   if (st.prev && T - st.prev.out > lk.exit) st.prev = null;
   return { t, cur: st.cur, prev: st.prev };
@@ -525,6 +534,7 @@ function setAccent(c) {
 
 let lastTs = 0;
 function frame(ts) {
+  requestAnimationFrame(frame);   // first: an error while drawing costs one frame, not the whole animation
   dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
   stepCalm();   // before the Mix plan: it picks the pool
   const lk = setLook(mixing() ? mixLook() : lookWant);   // also switches to/from Constellation when the window crosses phone width
@@ -569,7 +579,6 @@ function frame(ts) {
     ctx.restore();
   }
   drawNotch();
-  requestAnimationFrame(frame);
 }
 
 // ---------- talking to app.py ----------

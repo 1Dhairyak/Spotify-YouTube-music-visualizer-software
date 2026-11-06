@@ -77,6 +77,8 @@
     else if (n <= 3) type = pickR(r, ['echo', 'echo', 'sphere', 'stack', 'pair', 'split', 'frame']);
     else if (n <= 5) type = pickR(r, text.length <= 18 ? ['stack', 'pair', 'echo', 'sphere', 'frame'] : ['stack', 'pair', 'stack', 'frame']);
     else type = pickR(r, ['stack', 'pair', 'stack', 'frame']);
+    const parts = splitText(caps(longest.w)).length;
+    if (type === 'split' && (parts < 4 || parts > 12)) type = 'stack';   // one joined word can't be cut; a huge one is unreadable cut
     const L = { type, dark, items: [], rows: [], exit: r() < 0.5 ? 'blur' : 'slice', marquee: r() < 0.28,
                 edge: caps(longest.w), giant: caps(longest.w.replace(/[^a-z]/gi, '')).slice(0, 2) || 'O',
                 giantX: pickR(r, [0.1, 0.62, 0.86]), shatter: r() < 0.45 };
@@ -109,7 +111,7 @@
         L.items.push(...rowItems(rw, S.cx - rowWidth(rw, px, it) / 2, y0 + i * lh, px, it, ghostFill, outline));
       });
     } else if (type === 'split') {   // the longest word cut in two; the halves come in from both sides, offset
-      const s = caps(longest.w), cut = Math.ceil(s.length / 2), a = s.slice(0, cut), b = s.slice(cut);
+      const s = splitText(caps(longest.w)), cut = Math.ceil(s.length / 2), a = s.slice(0, cut).join(''), b = s.slice(cut).join('');
       const px = Math.min(S.h * 0.34, 100 * W * 0.4 / measure(a.length > b.length ? a : b, 100, true));
       L.split = { a, b, px, wd: longest, wa: measure(a, px, true), wb: measure(b, px, true) };
       L.items = rowItems(ws.filter(w => w !== longest), W * 0.07, S.y + S.h * 0.86, Math.min(S.h * 0.06, px * 0.25), false, 'white');
@@ -129,7 +131,7 @@
       const px2 = Math.min(px1 * 0.64, b.length ? 100 * W * 0.84 / rowWidth(b, 100, false) : px1);
       const x = W * 0.07, h = px1 * 0.8 + (b.length ? px2 * 1.05 : 0), y1 = S.cy - h / 2 + px1 * 0.75;
       L.items = rowItems(a, x, y1, px1, false, dark ? 'grad' : 'grad', false)
-        .concat(b.length ? rowItems(b, x, y1 + px2 * 1.1, px2, false, 'hot', false) : []);
+        .concat(b.length ? rowItems(b, x, y1 + px2 * 1.1, px2, false, dark ? 'hot' : 'dark', false) : []);
       L.block = { y: y1 - px1 * 0.85, h: px1 * 1.05 };
     } else {   // sphere
       const px = S.h / 8.5, unit = text + '   ', reps = Math.ceil(W * 1.3 / measure(unit, px)) + 2;
@@ -146,7 +148,7 @@
         const reps = Math.max(1, Math.floor(around / ctx.measureText(text + ' ').width));
         let s = 0;
         for (let rep = 0; rep < reps; rep++) ws.forEach(wd => {
-          for (const c of caps(wd.w) + ' ') { const cw = ctx.measureText(c).width; chars.push({ c, wd, at: s + cw / 2 }); s += cw; }
+          for (const c of splitText(caps(wd.w) + ' ')) { const cw = ctx.measureText(c).width; chars.push({ c, wd, at: s + cw / 2 }); s += cw; }
         });
         return { lat, px: bpx, chars };
       });

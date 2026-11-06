@@ -54,7 +54,7 @@
     if (n === 1) type = pickR(r, ['shout', 'script', 'cube', 'shout']);
     else if (n === 2) type = pickR(r, ['shout', 'block', 'script', 'cube']);
     else if (n <= 6 && lastLong && r() < 0.3) type = 'pretty';
-    else if (n <= 7 && chars <= 34 && r() < 0.28) type = 'ring';
+    else if (n <= 7 && chars <= 34 && !ws.some(w => JOINED.test(w.w)) && r() < 0.28) type = 'ring';   // joined scripts: not on a circle
     else if (n <= 4 && r() < 0.25) type = 'script';
     else type = 'block';
     const L = { type, sch, wipe: pickR(r, ['corner', 'stripes', 'slide']), items: [] };
@@ -145,13 +145,13 @@
       const text = ws.map(w => caps(w.w)).join(' ');
       ctx.font = FONTS.lg(px);
       const spacing = px * 0.32;
-      let arc = [...text].reduce((a, c) => a + ctx.measureText(c).width + spacing, 0);
+      let arc = splitText(text).reduce((a, c) => a + ctx.measureText(c).width + spacing, 0);
       const rad = R * 1.38, maxArc = rad * 5.6;
       if (arc > maxArc) { px *= maxArc / arc; arc = maxArc; }
       ctx.font = FONTS.lg(px);
       let ang = -2.75;   // start on the left, go clockwise over the top
       ws.forEach((wd, wi) => {
-        for (const c of caps(wd.w) + (wi < n - 1 ? ' ' : '')) {
+        for (const c of splitText(caps(wd.w) + (wi < n - 1 ? ' ' : ''))) {
           const cw = ctx.measureText(c).width, a = ang + (cw / 2) / rad;
           if (c !== ' ') letters.push({ c, wd, a });
           ang += (cw + px * 0.32) / rad;
