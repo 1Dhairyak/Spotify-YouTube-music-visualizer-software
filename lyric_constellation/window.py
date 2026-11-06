@@ -37,7 +37,7 @@ class Api:
                 "look": self._cfg["lock"] if self._cfg["lock"] >= 0 else self._cfg["look"],
                 "lock": self._cfg["lock"], "color": self._cfg["color"], "songs": self._cfg["look"],
                 "calm": p.mood.value() if p.mood else None, "mood": p.mood.choice if p.mood else "auto",
-                "beat": for_ui(p.beat), "dur": p.dur, "can_seek": p.can_seek}
+                "beat": for_ui(p.beat), "dur": p.dur or (p.lyrics or {}).get("duration"), "can_seek": p.can_seek}
 
     def next_look(self):
         self._cfg["look"] += 1
