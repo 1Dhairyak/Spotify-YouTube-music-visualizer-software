@@ -12,7 +12,7 @@ the *microphone*: play a song out loud nearby and the app recognizes it (like Sh
 listens again every 20 seconds to stay in time and notice a new song or a pause. It only listens while it is open on
 screen. The Android app has the Constellation look with its color picker; the Windows app has all 6 looks.
 
-A lightweight Windows app that turns whatever you're playing on Spotify, YouTube Music or YouTube into time-synced kinetic-typography lyrics. It runs full screen and uses a second monitor when you have one.
+A lightweight Windows app that turns whatever you're playing on Spotify, YouTube Music or YouTube into time-synced kinetic-typography lyrics. It runs full screen on the monitors you choose.
 
 Each song gets the next of 6 looks, in turn (or pick **Mix** in the notch to switch every few lines):
 
@@ -48,9 +48,9 @@ python app.py --demo 15    # demo with the first song in songs.txt, starting at 
 
 Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anywhere.
 
-**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (looks take turns every 5-10 s, each with a random variant, in a new order every play), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. On emotional songs the app goes calm: muted colors, slower motion, gentler pops, and Mix sticks to the quiet looks for 12-20 s each; **Auto · Calm · Lively** in the notch lets it decide or forces one for the song playing; the next song starts on Auto. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
+**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (looks take turns every 5-10 s, each with a random variant, in a new order every play), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. On emotional songs the app goes calm: muted colors, slower motion, gentler pops, and Mix sticks to the quiet looks for 12-20 s each; **Auto · Calm · Lively** in the notch lets it decide or forces one for the song playing; the next song starts on Auto. The notch also has a seek bar (when the player allows jumping) and Windows volume buttons, one small TV button per screen at its top right (lit = the app shows there, tap to switch; it starts on one and remembers your choice), and Constellation can take its color from the **album cover**. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
 
-**The mouse:** every look reacts to it. Words and stars near the cursor are pushed aside and magnified, then spring back; the scene leans with it; the edge light bends toward it, ripples when you sweep past and races to meet it. **Click** anywhere to send a shockwave that knocks the lyrics outward. Every word pops as it's sung and the scene kicks in on each line. Drawing keeps pace with the screen's refresh rate (180 Hz included).
+**The mouse:** every look reacts to it. Words and stars near the cursor are pushed aside and magnified, then spring back; the scene leans with it; the edge light bends toward it, ripples when you sweep past and races to meet it. **Click** a word to burst it into sparks and make it pop again, or anywhere else to send a shockwave that knocks the lyrics outward. Every word pops as it's sung, the scene kicks in on each line and pulses softly on the beat of the music. Drawing keeps pace with the screen's refresh rate (180 Hz included).
 
 ## Keys
 
@@ -60,7 +60,7 @@ Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anyw
 | F12 / F11, Esc | Toggle full screen / leave it |
 | N | Next look; in Mix, reshuffle the order |
 | T, 1–7 | In Constellation: next sub-style / pick one (they also rotate every 30 s) |
-| D / S | One or two screens / swap screens |
+| D / S | All screens or one / swap what each screen shows |
 | ← / →, 0 | Shift lyric timing / reset |
 
 Other commands: `--preload` (cache lyrics for `songs.txt`), `--probe` (show what Windows reports), `--version`.
