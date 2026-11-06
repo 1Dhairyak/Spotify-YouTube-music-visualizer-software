@@ -6,7 +6,7 @@
 (() => {
   const MINT = '#2BFFC0', INDIGO = '#3D0A91', MAGENTA = '#E8096E', NIGHT = '#0B1418';
   const SCHEMES = [   // ground, ink, blob color
-    { bg: MINT, ink: INDIGO, blob: INDIGO }, { bg: INDIGO, ink: MINT, blob: MAGENTA }, { bg: MAGENTA, ink: INDIGO, blob: MINT },
+    { bg: MINT, ink: INDIGO, blob: MAGENTA }, { bg: INDIGO, ink: MINT, blob: MAGENTA }, { bg: MAGENTA, ink: INDIGO, blob: MINT },
     { bg: NIGHT, ink: MINT, blob: MAGENTA }, { bg: MINT, ink: MAGENTA, blob: INDIGO }, { bg: MAGENTA, ink: MINT, blob: INDIGO },
   ];
   const BIG = px => `${px}px "Permanent Marker"`, SMALL = px => `700 ${px}px Caveat`;
@@ -30,7 +30,7 @@
   // dry = slices of the glyphs shifted sideways, for the dry-brush edge of the giant words.
   function hand(s, x, y, px, font, color, T, seed, p, a, dry) {
     ctx.font = font(px); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = color;
-    const total = textW(s, font(px)), chars = [...s];
+    const total = textW(s, font(px)), chars = splitText(s);
     let cx = x - total / 2;
     chars.forEach((ch, i) => {
       const w = ctx.measureText(ch).width, j = rng(seed + i * 31 + boilAt(T));
@@ -64,21 +64,21 @@
 
   // ---------- ink blobs ----------
   let blobs = [];
-  function spawn(x, y, n, color, r, seed) {
+  function spawn(x, y, n, r, seed) {
     const j = rng(seed);
     for (let i = 0; i < n; i++) {
       const a = j() * 6.283, sp = 120 + j() * 380;
-      blobs.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: r * (0.3 + j() * 0.9), born: sceneT, seed: Math.floor(j() * 1e6), color });
+      blobs.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: r * (0.3 + j() * 0.9), born: sceneT, seed: Math.floor(j() * 1e6) });
     }
     if (blobs.length > 46) blobs = blobs.slice(-46);
   }
-  function drawBlobs(T, a) {
+  function drawBlobs(T, a, color) {   // always the scene's blob color, so a blob left over never matches the words
     const k = 1 - Math.pow(0.12, dt);   // drag
     blobs = blobs.filter(b => T - b.born < 7);
     for (const b of blobs) {
       b.vx -= b.vx * k; b.vy -= b.vy * k; b.x += b.vx * dt; b.y += b.vy * dt + Math.sin(T + b.seed) * 0.15;
       const age = T - b.born, life = Math.min(1, age * 6) * Math.min(1, (7 - age) / 0.6), r = b.r * (0.5 + 0.5 * Math.min(1, age * 5));
-      ctx.save(); warp(b.x, b.y, 1.6); ctx.globalAlpha = a * life; ctx.fillStyle = b.color;
+      ctx.save(); warp(b.x, b.y, 1.6); ctx.globalAlpha = a * life; ctx.fillStyle = color;
       smoothPath(blobPts(b.x, b.y, r, b.seed + boilAt(T) % 2)); ctx.fill(); ctx.restore();
     }
   }
@@ -87,6 +87,7 @@
   function build(ph, r) {
     const S = stage(), ws = ph.words, n = ws.length, sch = pickR(r, SCHEMES);
     let type = n <= 3 ? 'giant' : n <= 6 ? pickR(r, ['giant', 'arc', 'stairs', 'arc']) : 'arc';
+    if (type === 'arc' && ws.some(w => JOINED.test(w.w))) type = n <= 6 ? 'giant' : 'stairs';   // whole words would end up upside down on a circle
     const L = { type, sch, seed: Math.floor(r() * 1e6), swipe: pickR(r, ['brush', 'flood', 'brush']), fx: r(), fy: r(), items: [] };
     if (type === 'giant') {   // small lead-in words over one huge word (the longest of the last two)
       const gi = n === 1 ? 0 : (ws[n - 1].w.length >= ws[n - 2].w.length ? n - 1 : n - 2);
@@ -101,7 +102,7 @@
       let pos = 0; const span = textW(s, SMALL(px)), sweep = span / R, a0 = -Math.PI / 2 - Math.min(sweep, 5.2) / 2 - 0.2;
       ws.forEach((wd, i) => {
         const cs = caps(wd.w) + (i < n - 1 ? ' ' : '');
-        for (const ch of cs) { const w = textW(ch, SMALL(px)); L.items.push({ ch, wd, ang: a0 + (pos + w / 2) / R }); pos += w; }
+        for (const ch of splitText(cs)) { const w = textW(ch, SMALL(px)); L.items.push({ ch, wd, ang: a0 + (pos + w / 2) / R }); pos += w; }
       });
       Object.assign(L, { R, px, cx: S.cx, cy: S.cy + S.h * 0.03 });
     } else {   // stairs: words step down and right, growing, the last the biggest
@@ -231,10 +232,10 @@
       while (i + 1 < ws.length && ws[i + 1].t <= d.t) i++;
       if (i !== lastWord) {
         if (i > lastWord && i - lastWord <= 2 && !cur.card) spawn(W * (0.2 + ((ws[i].t * 7.3) % 1) * 0.6), stage().cy + (((ws[i].t * 3.1) % 1) - 0.5) * stage().h * 0.5,
-                                                                  calmMode ? 1 : 2 + (i % 3), cur.L.sch.blob, Math.min(W, H) * 0.035, hash(ws[i].w + ws[i].t));
+                                                                  calmMode ? 1 : 2 + (i % 3), Math.min(W, H) * 0.035, hash(ws[i].w + ws[i].t));
         lastWord = i;
       }
-      drawBlobs(T, sceneFade);
+      drawBlobs(T, sceneFade, cur.L.sch.blob);
       if (d.prev) {   // the old line shrinks and tips away
         const p = clamp((T - d.prev.out) / this.exit, 0, 1);
         ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(p * 0.08); ctx.scale(1 - p * 0.25, 1 - p * 0.25); ctx.translate(-W / 2, -H / 2);

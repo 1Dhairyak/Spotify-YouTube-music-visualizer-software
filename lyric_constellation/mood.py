@@ -130,6 +130,7 @@ class SongMood:
 
     def __init__(self, tid, name=""):
         self.tid, self.name, self.zl, self.ws, self.heard, self.logged = tid, name, None, [], 0.0, -1
+        self.choice = "auto"  # the notch's Calm / Lively; a new song starts over on Auto
 
     def set_lyrics(self, lrc):
         self.zl = lyric_logit(lrc)

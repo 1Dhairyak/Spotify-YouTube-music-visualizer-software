@@ -67,7 +67,8 @@ async def recognize():
     with wave.open(out, "wb") as w:
         w.setnchannels(1), w.setsampwidth(2), w.setframerate(rate)
         w.writeframes((np.clip(data.mean(axis=1), -1, 1) * 32767).astype("<i2").tobytes())
-    res = await Shazam().recognize(out.getvalue())
+    async with Shazam() as shazam:  # closes its connection, which otherwise logs "Unclosed client session"
+        res = await shazam.recognize(out.getvalue())
     track = res.get("track")
     if not track:
         return None

@@ -2,6 +2,7 @@
 import numpy as np
 
 from lyric_constellation import mood
+from lyric_constellation import window
 from lyric_constellation.media import Player
 
 R = 16000
@@ -65,3 +66,23 @@ def test_player_keeps_one_mood_per_song():
     p.tid = 2
     p.publish("Other", "Artist", None, [], "")
     assert p.mood is not first and p.mood.heard == 0 and p.mood.value() is None
+
+
+def test_calm_or_lively_lasts_for_one_song(tmp_path, monkeypatch):
+    monkeypatch.setattr(window, "SETTINGS", tmp_path / "settings.json")
+    p = Player()
+    api = window.Api(p)
+    assert api.state()["mood"] == "auto"
+    api.set_mood("calm")   # no song yet: nothing to apply it to
+    assert api.state()["mood"] == "auto"
+    p.tid = 1
+    p.publish("Song", "Artist", None, [], "")
+    api.set_mood("calm")
+    assert api.state()["mood"] == "calm"
+    p.publish("Song", "Artist", None, [], "", {"lrc": SAD})   # lyrics arrive for the same song: the choice stays
+    assert api.state()["mood"] == "calm"
+    api.set_mood("nonsense")
+    assert api.state()["mood"] == "calm"
+    p.tid = 2
+    p.publish("Other", "Artist", None, [], "")
+    assert api.state()["mood"] == "auto"
