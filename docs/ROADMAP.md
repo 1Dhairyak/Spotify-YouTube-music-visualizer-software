@@ -101,9 +101,8 @@ measurements leave anyone's PC.
 - `lyric_constellation/feedback.py`: when `set_mood` changes while a song plays, it adds
   `{artist, title, model_p, chosen, app_version, week}` to `%APPDATA%\LyricConstellation\reports\2026-W45.json`.
   One entry per song: the latest choice wins.
-- Design change worth deciding: today Calm/Lively is a global switch that stays on. For clean labels it should mean
-  "for this song", going back to Auto at the next song, with the choice remembered per song. Otherwise one tap labels
-  every song after it.
+- Calm/Lively already means "for this song" and the next song starts on Auto, so one tap labels one song. Still to
+  add: remembering the choice when the same song plays again.
 - **Consent:** on first run, a card asks "Help improve the mood model? Only song names and your Calm/Lively choices
   are sent, never audio." with **Yes** / **No**. If Yes, once a week a card lists exactly what's in the report and
   offers **Send** / **Not now** / **Stop asking**. The answer is stored in settings and can be changed any time.

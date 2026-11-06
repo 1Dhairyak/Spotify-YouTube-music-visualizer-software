@@ -17,7 +17,7 @@ class Api:
         self._player, self._wins, self._dual, self._open = player, [], False, True
         self._lock = threading.Lock()
         # mode: auto (two screens when available) | single; look: counts songs, the UI shows look % number of looks
-        self._cfg = {"mode": "auto", "stars_on": 0, "style": 0, "look": 0, "lock": -1, "color": -1, "mood": "auto"}
+        self._cfg = {"mode": "auto", "stars_on": 0, "style": 0, "look": 0, "lock": -1, "color": -1}
         self._cfg.update(read_json(SETTINGS, {}))
         self._seen_tid, self._look_lock = 0, threading.Lock()
 
@@ -31,7 +31,7 @@ class Api:
                 "dual": self._dual, "stars_on": self._cfg["stars_on"], "style": self._cfg["style"],
                 "look": self._cfg["lock"] if self._cfg["lock"] >= 0 else self._cfg["look"],
                 "lock": self._cfg["lock"], "color": self._cfg["color"], "songs": self._cfg["look"],
-                "calm": p.mood.value() if p.mood else None, "mood": self._cfg["mood"]}
+                "calm": p.mood.value() if p.mood else None, "mood": p.mood.choice if p.mood else "auto"}
 
     def next_look(self):
         self._cfg["look"] += 1
@@ -46,10 +46,9 @@ class Api:
         self._save()
 
     def set_mood(self, m):
-        """From the notch: "auto" (the mood model decides), or always "calm" / "lively"."""
-        if m in ("auto", "calm", "lively"):
-            self._cfg["mood"] = m
-            self._save()
+        """From the notch, for the song playing: "auto" (the mood model decides), or "calm" / "lively"."""
+        if m in ("auto", "calm", "lively") and self._player.mood:
+            self._player.mood.choice = m
 
     def set_color(self, i):
         """From the notch: Constellation's color, -1 = cycle through all 15."""
