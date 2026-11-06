@@ -1,7 +1,8 @@
 // Look 4: Ink Sketch (from the Charlie Puth "How Long" kinetic-typography video).
 // Paper and blackboard that swap with an ink flood, brush-marker caps that go from grey to ink as they're sung,
 // and hand-drawn outlines that "boil": bubbles with shine marks, a signboard, an underline with footsteps,
-// light bulbs on a wire and big words.
+// light bulbs on a wire and big words, a glass that fills up (ice cubes bobbing) as the line is sung, and a
+// speech balloon that is drawn round the words.
 (() => {
   const PAPER = '#EEEBE3', BOARD = '#1B1A17', INK = '#16150F', CHALK = '#F1EEE6';
   const fg = dark => (dark ? CHALK : INK), grey = dark => (dark ? '#64625C' : '#ABA8A0');
@@ -91,6 +92,7 @@
     const w = tw(s, px), x0 = center ? x - w / 2 : x, j = rng(seed + boilAt(T));
     const rot = (j() - 0.5) * 0.02, dx = (j() - 0.5) * 1.2, dy = (j() - 0.5) * 1.2;
     ctx.save(); if (!inGroup) warp(x0 + w / 2, y - px * 0.35);   // pushed aside and magnified by the mouse
+    punchAt(wd, t, x0 + w / 2, y - px * 0.35, px, 0.6);   // pops as it's sung
     ctx.translate(x0 + dx, y + dy); ctx.rotate(rot); ctx.scale(SQ, 1);
     ctx.font = pm(px); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     const p = wd ? clamp((t - wd.t) / 0.22, 0, 1) : 1;
@@ -113,9 +115,9 @@
   function build(ph, r) {
     const S = stage(), ws = ph.words, n = ws.length, dark = r() < 0.5;
     let type;
-    if (n <= 2) type = r() < 0.6 ? 'big' : 'bubbles';
-    else if (n <= 5) type = pickR(r, ['bubbles', 'bubbles', 'bulbs', 'underline']);
-    else type = pickR(r, ['sign', 'underline', 'sign', 'bubbles']);
+    if (n <= 2) type = pickR(r, ['big', 'big', 'bubbles', 'glass']);
+    else if (n <= 5) type = pickR(r, ['bubbles', 'bubbles', 'bulbs', 'underline', 'glass', 'balloon']);
+    else type = pickR(r, ['sign', 'underline', 'sign', 'bubbles', 'balloon']);
     const L = { type, dark, seed: Math.floor(r() * 1e6), flood: r() < 0.5 ? 'blob' : 'ripple', fx: r(), fy: r() };
 
     if (type === 'bubbles') {
@@ -153,6 +155,18 @@
       L.rb = Math.min(S.h * 0.14, W / (n * 2.7));
       L.wire = [[-30, S.y + S.h * 0.08], [W / 2, S.y + S.h * 0.5], [W + 30, S.y + S.h * 0.14]];
       L.bulbs = ws.map((wd, i) => ({ wd, f: (i + 1) / (n + 1), s: caps(wd.w), seed: Math.floor(r() * 1e6) }));
+    } else if (type === 'glass') {   // words on the left, a glass on the right that fills as they're sung
+      const s = ws.map(w => caps(w.w)).join(' ');
+      L.px = Math.min(100 * W * 0.42 / tw(s, 100), S.h * 0.16);
+      L.gw = Math.min(S.h * 0.34, W * 0.2); L.gh = L.gw * 1.2; L.gx = W * 0.72; L.gy = S.cy - L.gh / 2 + S.h * 0.04;
+      L.tx = W * 0.08; L.ty = S.cy + L.px * 0.36;
+    } else if (type === 'balloon') {   // a speech balloon drawn round one or two lines of words
+      const half = n > 3 ? Math.ceil(n / 2) : n;
+      L.lines = [ws.slice(0, half), ws.slice(half)].filter(l => l.length);
+      const texts = L.lines.map(l => l.map(w => caps(w.w)).join(' '));
+      L.px = Math.min(...texts.map(t => 100 * W * 0.48 / tw(t, 100)), S.h * 0.12);
+      L.rx = Math.max(...texts.map(t => tw(t, L.px))) * 0.62 + L.px * 0.6; L.ry = L.px * (0.75 + L.lines.length * 0.55);
+      L.bx = S.cx + (r() - 0.5) * W * 0.1; L.by = S.cy - S.h * 0.05; L.tail = r() < 0.5 ? -1 : 1;
     } else {   // big
       const s = ws.map(w => caps(w.w)).join(' ');
       L.s = s; L.px = Math.min(100 * W * 0.62 / tw(s, 100), S.h * 0.4);
@@ -298,6 +312,51 @@
     }
   }
 
+  function drawGlass(sc, t, T, a) {
+    const L = sc.L, ws = sc.ph.words, b = boilAt(T), dk = L.dark;
+    let x = L.tx;
+    ws.forEach(wd => { x += word(caps(wd.w), x, L.ty, L.px, wd, t, T, dk, a, L.seed + wd.t * 100) + tw(' ', L.px); });
+    const fill = ws.reduce((acc, wd) => acc + sung(wd, t, 0.5), 0) / ws.length;   // how full: the share of the line sung
+    sc.level = sc.level === undefined ? fill : lerp(sc.level, fill, ease(0.08));
+    const { gx, gy, gw, gh } = L, inset = gw * 0.09, top = gy, bot = gy + gh;
+    ctx.save(); warp(gx, gy + gh / 2, 0.8);
+    const outline = [[gx - gw / 2, top], [gx - gw / 2 + inset, bot], [gx + gw / 2 - inset, bot], [gx + gw / 2, top]];
+    const lvl = bot - (gh * 0.88) * sc.level, side = y => (y - top) / gh * inset;
+    if (sc.level > 0.01) {   // the drink, its surface sloshing
+      ctx.save(); ctx.beginPath(); ctx.moveTo(...outline[0]); outline.slice(1).forEach(p => ctx.lineTo(...p)); ctx.closePath(); ctx.clip();
+      ctx.globalAlpha = a * 0.85; ctx.fillStyle = fg(dk); ctx.beginPath(); ctx.moveTo(gx - gw, bot + 4);
+      for (let i = 0; i <= 12; i++) { const xx = gx - gw / 2 + gw * i / 12; ctx.lineTo(xx, lvl + Math.sin(T * 3 + i * 0.9) * gw * 0.015); }
+      ctx.lineTo(gx + gw, bot + 4); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    ctx.strokeStyle = fg(dk); ctx.globalAlpha = a;
+    const lp = easeOut((T - sc.at) / 0.6);
+    strokePts([...linePts(...outline[0], ...outline[1], L.seed + b, 2, 8), ...linePts(...outline[1], ...outline[2], L.seed + 3 + b, 2, 6).slice(1),
+               ...linePts(...outline[2], ...outline[3], L.seed + 6 + b, 2, 8).slice(1)], false, lp, 3);
+    strokePts(linePts(gx - gw / 2 + side(bot - gh * 0.1), bot - gh * 0.1, gx + gw / 2 - side(bot - gh * 0.1), bot - gh * 0.1, L.seed + 9 + b, 1.5, 6), false, lp, 2);
+    [[-0.2, 0.3], [0.15, -0.5]].forEach(([fx, ph], i) => {   // two ice cubes riding the surface
+      const s = gw * 0.2, cx = gx + gw * fx, cy = Math.min(lvl + s * 0.2, bot - s) + Math.sin(T * 1.7 + ph) * 3;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(0.3 + i * 0.5 + Math.sin(T + i) * 0.08);
+      ctx.strokeStyle = dk ? (sc.level > 0.3 ? BOARD : CHALK) : (sc.level > 0.3 ? PAPER : INK);
+      strokePts(rectPts(-s / 2, -s / 2, s, s, s * 0.15, L.seed + 20 + i + b), true, lp, 2.5);
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+  function drawBalloon(sc, t, T, a) {
+    const L = sc.L, b = boilAt(T), p = easeOut((T - sc.at) / 0.5);
+    ctx.save(); warp(L.bx, L.by, 0.6); ctx.strokeStyle = fg(L.dark); ctx.globalAlpha = a;
+    strokePts(circlePts(L.bx, L.by, L.rx, L.seed + b, L.ry), true, p, 3.2);
+    const tx = L.bx + L.tail * L.rx * 0.45, ty = L.by + L.ry * 0.88;   // the tail, pointing down to a speaker off screen
+    strokePts([[tx - L.tail * L.rx * 0.12, ty - 4], [tx + L.tail * L.rx * 0.18, ty + L.ry * 0.6], [tx + L.tail * L.rx * 0.12, ty - 2]], false, clamp((T - sc.at - 0.35) / 0.3, 0, 1), 3.2);
+    ctx.restore();
+    L.lines.forEach((ln, i) => {
+      const s = ln.map(w => caps(w.w)).join(' ');
+      let x = L.bx - tw(s, L.px) / 2;
+      const y = L.by + L.px * 0.36 + (i - (L.lines.length - 1) / 2) * L.px * 1.1;
+      ln.forEach(wd => { x += word(caps(wd.w), x, y, L.px, wd, t, T, L.dark, a * p, L.seed + wd.t * 100) + tw(' ', L.px); });
+    });
+  }
+
   function drawCard(sc, T, a) {
     const S = stage(), L = sc.L, age = T - sc.at;
     const x1 = W * 0.08, yWho = S.y + S.h * 0.18;
@@ -322,7 +381,7 @@
 
   function drawScene(sc, t, T, a) {
     if (sc.card) return drawCard(sc, T, a);
-    ({ bubbles: drawBubbles, sign: drawSign, underline: drawUnderline, bulbs: drawBulbs, big: drawBig })[sc.L.type](sc, t, T, a);
+    ({ bubbles: drawBubbles, sign: drawSign, underline: drawUnderline, bulbs: drawBulbs, big: drawBig, glass: drawGlass, balloon: drawBalloon })[sc.L.type](sc, t, T, a);
   }
 
   LOOKS.push({

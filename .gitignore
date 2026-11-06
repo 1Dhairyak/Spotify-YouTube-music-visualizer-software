@@ -10,3 +10,5 @@ __pycache__/
 # PyInstaller output (the Windows download)
 build/
 dist/
+# mood-model training: lyrics fetched while measuring songs
+tools/.cache/

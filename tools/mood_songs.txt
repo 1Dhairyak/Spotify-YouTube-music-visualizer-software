@@ -1,0 +1,279 @@
+# Training songs for the mood model (tools/train_mood.py): "E" = emotional (ballads, heartbreak, slow and tender),
+# "L" = lively (party, dance, hype, upbeat pop). Clear-cut songs only; anything in between is left out.
+# None of these are in tools/mood_heldout.txt, which is kept apart to test the trained model.
+
+# --- English, emotional ---
+E  Adele - Someone Like You
+E  Adele - Hello
+E  Adele - When We Were Young
+E  Sam Smith - Too Good at Goodbyes
+E  Sam Smith - Stay With Me
+E  Lewis Capaldi - Someone You Loved
+E  Lewis Capaldi - Before You Go
+E  Billie Eilish - when the party's over
+E  Billie Eilish - What Was I Made For?
+E  Billie Eilish - everything i wanted
+E  Olivia Rodrigo - drivers license
+E  Olivia Rodrigo - traitor
+E  Olivia Rodrigo - happier
+E  Ed Sheeran - Photograph
+E  Ed Sheeran - Supermarket Flowers
+E  Ed Sheeran - Perfect
+E  Ed Sheeran - Thinking Out Loud
+E  Coldplay - Fix You
+E  Coldplay - The Scientist
+E  John Legend - All of Me
+E  Bruno Mars - When I Was Your Man
+E  Bruno Mars - Talking to the Moon
+E  Christina Perri - Jar of Hearts
+E  Christina Perri - A Thousand Years
+E  Passenger - Let Her Go
+E  James Arthur - Impossible
+E  Calum Scott - Dancing On My Own
+E  Lady Gaga - Always Remember Us This Way
+E  Lana Del Rey - Young and Beautiful
+E  Taylor Swift - All Too Well
+E  Taylor Swift - Back to December
+E  Taylor Swift - exile
+E  Selena Gomez - Lose You to Love Me
+E  Dean Lewis - Be Alright
+E  Dean Lewis - Waves
+E  Tom Odell - Another Love
+E  Joji - Glimpse of Us
+E  Joji - SLOW DANCING IN THE DARK
+E  Conan Gray - Heather
+E  Arctic Monkeys - I Wanna Be Yours
+E  The Weeknd - Call Out My Name
+E  XXXTENTACION - Jocelyn Flores
+E  XXXTENTACION - changes
+E  Rihanna - Stay
+E  Birdy - Skinny Love
+E  ZAYN - Dusk Till Dawn
+E  Keane - Somewhere Only We Know
+E  Snow Patrol - Chasing Cars
+E  Damien Rice - The Blower's Daughter
+E  Sufjan Stevens - Mystery of Love
+E  Jeff Buckley - Hallelujah
+E  Elton John - Your Song
+E  Celine Dion - My Heart Will Go On
+E  Whitney Houston - I Will Always Love You
+E  Sinéad O'Connor - Nothing Compares 2 U
+E  R.E.M. - Everybody Hurts
+E  Ariana Grande - ghostin
+E  Ariana Grande - pov
+E  SZA - Nobody Gets Me
+E  Frank Ocean - Ivy
+E  Rex Orange County - Pluto Projector
+E  Harry Styles - Falling
+E  Niall Horan - This Town
+E  One Direction - Night Changes
+E  Kodaline - All I Want
+E  Lukas Graham - 7 Years
+E  Benson Boone - In the Stars
+E  Benson Boone - Ghost Town
+E  Gracie Abrams - I miss you, I'm sorry
+E  Labrinth - Jealous
+E  Ruth B. - Lost Boy
+E  Isak Danielson - Broken
+E  Stephen Sanchez - Until I Found You
+E  Mitski - My Love Mine All Mine
+E  Sia - Breathe Me
+E  Shawn Mendes - When You're Gone
+E  Hozier - Cherry Wine
+E  Lord Huron - The Night We Met
+E  Cigarettes After Sex - Apocalypse
+E  Jamie Miller - Here's Your Perfect
+
+# --- Hindi / Urdu / Punjabi, emotional ---
+E  Arijit Singh - Channa Mereya
+E  Arijit Singh - Tum Hi Ho
+E  Arijit Singh - Agar Tum Saath Ho
+E  Arijit Singh - Phir Le Aya Dil
+E  Arijit Singh - Hamari Adhuri Kahani
+E  Arijit Singh - Ae Dil Hai Mushkil
+E  Arijit Singh - Muskurane
+E  Arijit Singh - Tujhe Kitna Chahne Lage
+E  Arijit Singh - Kalank
+E  Arijit Singh - Soch Na Sake
+E  Arijit Singh - Pachtaoge
+E  Arijit Singh - Shayad
+E  Arijit Singh - Kabira
+E  Atif Aslam - Dil Diyan Gallan
+E  Atif Aslam - Jeena Jeena
+E  Atif Aslam - Pehli Dafa
+E  Atif Aslam - Tera Hone Laga Hoon
+E  Jubin Nautiyal - Raataan Lambiyan
+E  B Praak - Filhall
+E  B Praak - Mann Bharryaa 2.0
+E  Darshan Raval - Tera Zikr
+E  Mohit Chauhan - Tum Se Hi
+E  A.R. Rahman - Kun Faya Kun
+E  KK - Tadap Tadap
+E  KK - Zara Sa
+E  KK - Pal
+E  Ankit Tiwari - Sun Raha Hai
+E  Rahat Fateh Ali Khan - Zaroori Tha
+E  Rahat Fateh Ali Khan - O Re Piya
+E  Papon - Moh Moh Ke Dhaage
+E  Sachet Tandon - Bekhayali
+E  Vishal Mishra - Pehle Bhi Main
+E  Vishal Mishra - Kaise Hua
+E  Anuv Jain - Baarishein
+E  Anuv Jain - Husn
+E  Anuv Jain - Alag Aasmaan
+E  Prateek Kuhad - cold/mess
+E  Prateek Kuhad - Kasoor
+E  Lucky Ali - O Sanam
+E  Armaan Malik - Main Rahoon Ya Na Rahoon
+E  Sonu Nigam - Abhi Mujh Mein Kahin
+E  Sonu Nigam - Kal Ho Naa Ho
+E  Mukesh - Kahin Door Jab Din Dhal Jaye
+E  Satinder Sartaaj - Sajjan Raazi
+E  Amrinder Gill - Judaa
+E  AP Dhillon - With You
+E  Jaani - Pachtaoge
+E  Shreya Ghoshal - Saibo
+E  Arijit Singh - Satranga
+E  Arijit Singh - Apna Bana Le
+E  Arijit Singh - Tere Hawaale
+E  Jasleen Royal - Ranjha
+E  Ali Zafar - Jhoom
+E  Shilpa Rao - Khuda Jaane
+
+# --- K-pop, emotional ---
+E  BTS - Spring Day
+E  BTS - Blue & Grey
+E  IU - Through the Night
+
+# --- English, lively ---
+L  Dua Lipa - Don't Start Now
+L  Dua Lipa - Physical
+L  The Weeknd - Blinding Lights
+L  The Weeknd - Can't Feel My Face
+L  Mark Ronson - Uptown Funk
+L  Bruno Mars - 24K Magic
+L  Bruno Mars - Treasure
+L  Pharrell Williams - Happy
+L  Justin Timberlake - CAN'T STOP THE FEELING!
+L  Katy Perry - Firework
+L  Katy Perry - Roar
+L  Katy Perry - Last Friday Night (T.G.I.F.)
+L  Taylor Swift - Shake It Off
+L  Lady Gaga - Bad Romance
+L  Lady Gaga - Poker Face
+L  Rihanna - Don't Stop the Music
+L  Rihanna - We Found Love
+L  LMFAO - Party Rock Anthem
+L  Pitbull - Timber
+L  Pitbull - Give Me Everything
+L  Flo Rida - Low
+L  Usher - Yeah!
+L  Nelly - Hot In Herre
+L  The Black Eyed Peas - I Gotta Feeling
+L  The Black Eyed Peas - Pump It
+L  Maroon 5 - Moves Like Jagger
+L  Maroon 5 - Sugar
+L  Ed Sheeran - Shape of You
+L  Ed Sheeran - Bad Habits
+L  Harry Styles - As It Was
+L  Harry Styles - Watermelon Sugar
+L  Doja Cat - Say So
+L  Doja Cat - Kiss Me More
+L  Lizzo - About Damn Time
+L  Lizzo - Juice
+L  Megan Thee Stallion - Savage
+L  Cardi B - I Like It
+L  Drake - God's Plan
+L  Travis Scott - SICKO MODE
+L  Kendrick Lamar - HUMBLE.
+L  Kendrick Lamar - Not Like Us
+L  Eminem - Without Me
+L  Eminem - The Real Slim Shady
+L  Lil Nas X - Old Town Road
+L  Lil Nas X - INDUSTRY BABY
+L  Imagine Dragons - Believer
+L  Imagine Dragons - Thunder
+L  OneRepublic - Counting Stars
+L  Avicii - Wake Me Up
+L  Avicii - Levels
+L  Calvin Harris - Summer
+L  Calvin Harris - Feel So Close
+L  Major Lazer - Lean On
+L  Daft Punk - Get Lucky
+L  Shakira - Waka Waka (This Time for Africa)
+L  Shakira - Hips Don't Lie
+L  Luis Fonsi - Despacito
+L  J Balvin - Mi Gente
+L  Britney Spears - Toxic
+L  Miley Cyrus - Flowers
+L  Miley Cyrus - Party in the U.S.A.
+L  Jason Derulo - Talk Dirty
+L  Sean Paul - Temperature
+L  Kesha - TiK ToK
+L  Carly Rae Jepsen - Call Me Maybe
+L  Sia - Cheap Thrills
+L  Camila Cabello - Havana
+L  Ava Max - Sweet but Psycho
+L  WALK THE MOON - Shut Up and Dance
+L  Panic! At The Disco - High Hopes
+L  Fall Out Boy - Centuries
+L  Chappell Roan - HOT TO GO!
+L  Charli xcx - 360
+L  Beyoncé - Crazy in Love
+L  Beyoncé - Single Ladies (Put a Ring on It)
+L  Jennifer Lopez - On the Floor
+L  Bruno Mars - Finesse
+L  Dua Lipa - Houdini
+L  Sabrina Carpenter - Please Please Please
+L  Post Malone - Sunflower
+L  Pitbull - Hotel Room Service
+
+# --- Hindi / Punjabi, lively ---
+L  Badshah - DJ Waley Babu
+L  Badshah - Genda Phool
+L  Yo Yo Honey Singh - Blue Eyes
+L  Yo Yo Honey Singh - Desi Kalakaar
+L  Yo Yo Honey Singh - Brown Rang
+L  Yo Yo Honey Singh - Party All Night
+L  Guru Randhawa - Lahore
+L  Guru Randhawa - High Rated Gabru
+L  Guru Randhawa - Suit Suit
+L  Diljit Dosanjh - Lover
+L  Diljit Dosanjh - G.O.A.T.
+L  Diljit Dosanjh - Born To Shine
+L  AP Dhillon - Brown Munde
+L  Karan Aujla - Softly
+L  Sidhu Moose Wala - 295
+L  Sidhu Moose Wala - So High
+L  Jasmine Sandlas - Illegal Weapon 2.0
+L  Neha Kakkar - Dilbar
+L  Badshah - Kala Chashma
+L  Labh Janjua - London Thumakda
+L  Benny Dayal - Badtameez Dil
+L  Badshah - Kar Gayi Chull
+L  Badshah - Saturday Saturday
+L  Sukhwinder Singh - Chaiyya Chaiyya
+L  Diljit Dosanjh - Proper Patola
+L  The Doorbeen - Lamberghini
+L  Arijit Singh - Jhoome Jo Pathaan
+L  Vishal Dadlani - Sheila Ki Jawani
+L  Zack Knight - Bom Diggy Diggy
+L  Badshah - Abhi Toh Party Shuru Hui Hai
+L  Mika Singh - Dhinka Chika
+L  Vishal Dadlani - Malhari
+L  Shankar Mahadevan - Gallan Goodiyaan
+L  Benny Dayal - Nachde Ne Saare
+L  Arijit Singh - Ghungroo
+L  Vishal Dadlani - Balam Pichkari
+L  Badshah - Mercy
+L  Diljit Dosanjh - Do You Know
+L  Raftaar - Swag Mera Desi
+L  Divine - Mere Gully Mein
+
+# --- K-pop, lively ---
+L  BTS - Dynamite
+L  BTS - Butter
+L  BLACKPINK - How You Like That
+L  PSY - Gangnam Style
+L  TWICE - FANCY
+L  NewJeans - Super Shy

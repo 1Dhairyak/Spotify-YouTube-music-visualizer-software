@@ -20,6 +20,7 @@
   html, body { height: 100%; background: var(--bg); color: var(--accent); overflow: hidden; user-select: none;
     font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; }
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+  #nc { bottom: auto; height: 400px; pointer-events: none; }   /* the notch's black shape (drawNotch); NC_H in the script */
   header { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 20px;
     padding: 32px 40px; transition: opacity .5s; z-index: 1; }
   header.hidden { opacity: 0; }
@@ -70,14 +71,10 @@
   [data-look=ink] #title, [data-look=ink] #cover .t { font-family: 'Permanent Marker'; text-transform: uppercase; font-weight: 400; }
   [data-look=ink] #artist, [data-look=ink] #cover .a { font-family: 'Permanent Marker'; text-transform: uppercase; font-size: 14px; }
   [data-look=ink] #cover .a { font-size: clamp(16px, 1.4vw, 26px); }
-  [data-look=atlas] #title, [data-look=atlas] #cover .t { font-family: Bahnschrift, 'Segoe UI', sans-serif; font-weight: 700;
-    font-stretch: 75%; text-transform: uppercase; letter-spacing: .02em; }
-  [data-look=atlas] #artist, [data-look=atlas] #cover .a { font-family: Bahnschrift, 'Segoe UI', sans-serif; font-weight: 300;
-    text-transform: uppercase; letter-spacing: .2em; }
   [data-look=ink] #art, [data-look=pop] #art { border-radius: 6px; }
 
   /* The notch: a black pill at the top center that opens, on hover, into the look and color pickers. The black shape
-     is drawn in the canvas (drawNotch) and moved by a spring; this element is only the panel of chips, a fixed size,
+     is drawn in its own canvas (#nc, drawNotch) and moved by a spring; this element is only the panel of chips, a fixed size,
      fading in and out, so opening the notch never relayouts or repaints the page. */
   #notch { position: fixed; top: 0; left: 50%; z-index: 5; width: var(--open-w, 780px); transform: translateX(-50%);
     color: #fff; pointer-events: none; font: 500 13px "Segoe UI Variable Text", "Segoe UI", sans-serif; }
@@ -87,7 +84,7 @@
   #notch.open .in { opacity: 1; transition: opacity .3s .12s; }
   #notch .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
   #notch:not(.colors) #colors { display: none; }
-  .phone #looks { display: none; }
+  .phone #looks, .phone #moods { display: none; }
   .chip { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 5px; border-radius: 99px; background: #1c1c1c;
     cursor: pointer; white-space: nowrap; transition: background .25s, color .25s, box-shadow .25s; }
   .chip:hover { background: #2c2c2c; }
@@ -123,7 +120,7 @@
 </style>
 </head>
 <body>
-<canvas></canvas>
+<canvas></canvas><canvas id="nc"></canvas>
 <header class="hidden"><img id="art" alt=""><div><div id="title"></div><div id="artist"></div></div></header>
 <div id="cover"><img alt=""><div class="t"></div><div class="a"></div></div>
 <div id="status"></div>
@@ -135,6 +132,7 @@
     <div class="mbtn" data-m="next" title="Next"><svg viewBox="0 0 24 24"><path d="M15.6 5H18v14h-2.4zM5 5l9.8 7L5 19z"/></svg></div>
   </div>
   <div class="row" id="looks"></div><div class="row" id="colors"></div>
+  <div class="row" id="moods"><div class="chip plain" data-mood="auto">Auto</div><div class="chip plain" data-mood="calm">Calm</div><div class="chip plain" data-mood="lively">Lively</div></div>
 </div></div>
 <div id="cursor"></div>
 <script>
@@ -175,6 +173,20 @@ const easeOut = p => 1 - Math.pow(1 - clamp(p, 0, 1), 3);
 const easeInOut = p => { p = clamp(p, 0, 1); return p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };
 const backOut = p => { p = clamp(p, 0, 1) - 1; return 1 + 2.7 * p * p * p + 1.7 * p * p; };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const smoothstep = (a, b, v) => { v = clamp((v - a) / (b - a), 0, 1); return v * v * (3 - 2 * v); };
+// Calm mode: on emotional songs (app.py's mood model, or the notch's Calm / Lively) the scene goes muted and slow.
+// calmNow eases toward the target; calmFx (0..1) scales the effects; calmMode (with hysteresis) swaps the Mix pool.
+let calmIn = null, moodNow = 'auto', calmNow = 0.3, calmFx = 0, calmMode = false, calmFilter = 0;
+function stepCalm() {
+  const want = moodNow === 'calm' ? 1 : moodNow === 'lively' ? 0 : calmIn == null ? 0.3 : calmIn;
+  calmNow += (want - calmNow) * ease(0.02);
+  if (calmNow > 0.6) calmMode = true; else if (calmNow < 0.4) calmMode = false;
+  calmFx = smoothstep(0.35, 0.8, calmNow);
+  if (Math.abs(calmFx - calmFilter) > 0.02 || (calmFx !== calmFilter && (calmFx === 0 || calmFx === 1))) {
+    calmFilter = calmFx;
+    cv.style.filter = calmFx ? `saturate(${1 - 0.55 * calmFx}) brightness(${1 - 0.12 * calmFx})` : '';
+  }
+}
 const stage = () => ({ x: 0, y: TOP, w: W, h: H - TOP, cx: W / 2, cy: TOP + (H - TOP) / 2 });
 
 // ---------- smooth timing: the same motion at 60, 144 or 180 Hz ----------
@@ -284,15 +296,31 @@ function stepMouse() {
 // What's drawn at local (x, y) under the current transform: pushed away from the mouse (in screen pixels, so it
 // works inside rotated or scaled layouts) and gently magnified, as a lens. Returns { dx, dy, s } in local units.
 const NO_WARP = { dx: 0, dy: 0, s: 1, f: 0 };
+// A click sends a shockwave: a ring that runs out from the click for SHOCK seconds and knocks things outward.
+const shocks = [], SHOCK = 1.2;
+const shocking = () => shocks.length > 0 && now() - shocks[shocks.length - 1].at < SHOCK;
 function field(x, y, k = 1) {
-  if (mouse.presence < 0.01) return NO_WARP;
+  const live = shocking();
+  if (mouse.presence < 0.01 && !live) return NO_WARP;
   const m = ctx.getTransform(), d = DPR();
   const sx = (m.a * x + m.c * y + m.e) / d, sy = (m.b * x + m.d * y + m.f) / d;
-  const ex = sx - mouse.sx, ey = sy - mouse.sy, r = Math.hypot(ex, ey), R = 170;
-  if (r > R * 2) return NO_WARP;
-  const f = Math.exp(-(r * r) / (R * R)) * mouse.presence * k;
-  const push = 42 * f * Math.min(1, r / 40) / Math.max(r, 1);   // screen px, away from the mouse
-  const ox = ex * push, oy = ey * push;
+  let ox = 0, oy = 0, f = 0;
+  if (mouse.presence >= 0.01) {
+    const ex = sx - mouse.sx, ey = sy - mouse.sy, r = Math.hypot(ex, ey), R = 170;
+    if (r < R * 2) {
+      f = Math.exp(-(r * r) / (R * R)) * mouse.presence * k;
+      const push = 42 * f * Math.min(1, r / 40) / Math.max(r, 1);   // screen px, away from the mouse
+      ox = ex * push; oy = ey * push;
+    }
+  }
+  if (live) for (const p of shocks) {
+    const age = now() - p.at;
+    if (age > SHOCK) continue;
+    const ex = sx - p.x, ey = sy - p.y, r = Math.hypot(ex, ey) || 1;
+    const g = Math.exp(-(((r - age * 1100) / 110) ** 2)) * (1 - age / SHOCK) * k * (1 - 0.6 * calmFx);
+    ox += ex / r * 70 * g; oy += ey / r * 70 * g; f = Math.max(f, g * 0.6);
+  }
+  if (!ox && !oy && !f) return NO_WARP;
   const a = m.a / d, b = m.b / d, c = m.c / d, e = m.d / d, det = a * e - b * c || 1;
   return { dx: (e * ox - c * oy) / det, dy: (-b * ox + a * oy) / det, s: 1 + 0.28 * f, f };
 }
@@ -319,6 +347,33 @@ const pickR = (r, arr) => arr[Math.floor(r() * arr.length)];
 
 // How far a word is into being sung: 0 before, 1 a moment after it starts.
 const sung = (wd, t, dur = 0.15) => clamp((t - wd.t) / dur, 0, 1);
+// A word's pop as it's sung: a damped spring that overshoots to ~1.18x and settles in ~0.4 s, with a small tilt
+// (its direction from the word, so neighbours tip different ways) and a lift. k scales it; 0 turns it off.
+const NO_PUNCH = { s: 1, rot: 0, dy: 0 };
+function punch(wd, t, k = 1) {
+  const u = wd ? t - wd.t : -1;
+  if (u < 0 || u > 0.6 || !k) return NO_PUNCH;
+  const w = Math.exp(-8 * u) * Math.sin(18 * u) * k * (1 - 0.75 * calmFx);
+  return { s: 1 + 0.34 * w, rot: 0.07 * w * (hash(wd.w + wd.t) & 1 ? 1 : -1), dy: -0.12 * w };
+}
+// Applies punch() to whatever is drawn next around (x, y) (inside save()); px = the text size, for the lift.
+function punchAt(wd, t, x, y, px, k = 1) {
+  const p = punch(wd, t, k);
+  if (p !== NO_PUNCH) { ctx.translate(x, y + p.dy * px); ctx.rotate(p.rot); ctx.scale(p.s, p.s); ctx.translate(-x, -y); }
+  return p;
+}
+// The camera kick: the whole scene zooms in a touch on every sung word, more at the start of a line, and eases back.
+let kick = 0, kickWord = -1;
+function stepKick() {
+  const ws = track.words, t = songTime();
+  let lo = 0, hi = ws.length - 1, i = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (ws[m].t <= t) { i = m; lo = m + 1; } else hi = m - 1; }
+  if (i !== kickWord) {
+    if (i > kickWord && i - kickWord <= 2 && clock.playing) kick = Math.min(0.045, kick + (i === 0 || ws[i - 1].end ? 0.03 : 0.01) * (1 - 0.75 * calmFx));
+    kickWord = i;   // a seek jumps further: no kick
+  }
+  kick *= 1 - ease(0.1);
+}
 const caps = s => s.toUpperCase();
 
 // Largest font size (px) at which `text` fits maxW, capped at maxPx. font(px) returns a CSS font string.
@@ -400,7 +455,8 @@ function direct(lk, T) {
   if (!st.cur || st.cur.key !== key || st.cur.W !== W || st.cur.TOP !== Math.round(TOP)) {
     const resized = st.cur && st.cur.key === key;
     if (st.cur && !resized) { st.prev = st.cur; st.prev.out = T; }
-    st.cur = { key, k, card, ph, at: resized ? st.cur.at : T, W, TOP: Math.round(TOP), r: rng(hash(track.title + ':' + key)) };
+    st.cur = { key, k, card, ph, at: resized ? st.cur.at : T, W, TOP: Math.round(TOP),
+               r: rng(hash(track.title + ':' + key + ':' + songSalt + ':' + (mixSeg ? mixSeg.sub : 0))) };
     st.cur.L = card ? lk.buildCard(st.cur) : lk.build(ph, st.cur.r, st.cur);
     if (!resized && lk.enter) lk.enter(st.cur, st.prev, T);
   }
@@ -433,6 +489,36 @@ function setLook(i) {
   if (lk.reset) lk.reset();
   return lk;
 }
+// Mix: looks take turns every 5-10 s, each switch at the start of a line, never one of the last two looks again.
+// Planned from the song's lines and a number that changes every song, so both screens agree, a seek lands on the
+// same look, and the next play of the song gets a different order. `sub` picks the variant inside a look.
+let songSalt = 0, mixSeg = null;
+const CALM_LOOKS = ['constellation', 'ink', 'space'];
+const mixing = () => lockNow < 0 && LOOKS.length > 1 && !isPhone();
+function mixPlan() {
+  const P = track.phrases;
+  if (mixPlan.P === P && mixPlan.salt === songSalt && mixPlan.calm === calmMode) return mixPlan.plan;
+  const r = rng(hash(track.title + ':mix:' + songSalt)), plan = [];
+  const calmPool = LOOKS.map((l, i) => CALM_LOOKS.includes(l.id) ? i : -1).filter(i => i >= 0);
+  const pool = calmMode && calmPool.length ? calmPool : [...LOOKS.keys()], n = pool.length;   // calm: the quiet looks only
+  const starts = P.length ? P.map(p => p.t0 - LEAD) : Array.from({ length: 200 }, (_, i) => i * 8);   // no lyrics: every 8 s
+  let next = -Infinity;
+  for (const t of starts) {
+    if (t < next) continue;
+    const recent = plan.slice(-Math.min(2, n - 1)).map(s => s.look), used = i => plan.filter(s => s.look === i).length;
+    const free = pool.filter(i => !recent.includes(i)), least = Math.min(...free.map(used));
+    plan.push({ t, look: pickR(r, free.filter(i => used(i) <= least + 1)), sub: Math.floor(r() * 1e6) });   // the least shown go first
+    next = t + (calmMode ? 12 + r() * 8 : 5 + r() * 5);
+  }
+  Object.assign(mixPlan, { P, salt: songSalt, calm: calmMode, plan });
+  return plan;
+}
+function mixLook() {
+  const t = songTime();
+  mixSeg = null;
+  for (const s of mixPlan()) { if (mixSeg && s.t > t) break; mixSeg = s; }
+  return mixSeg.look;
+}
 function setAccent(c) {
   if (c && c !== setAccent.last) document.documentElement.style.setProperty('--accent', setAccent.last = c);
 }
@@ -440,9 +526,10 @@ function setAccent(c) {
 let lastTs = 0;
 function frame(ts) {
   dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
-  const lk = setLook(lookWant);   // also switches to/from Constellation when the window crosses phone width
+  stepCalm();   // before the Mix plan: it picks the pool
+  const lk = setLook(mixing() ? mixLook() : lookWant);   // also switches to/from Constellation when the window crosses phone width
   stepMouse(); stepNotch(lk);                                  // these keep real speed; the looks below get slowed dt
-  rate += ((clock.playing ? 1 : 0.1) - rate) * ease(0.04);
+  rate += ((clock.playing ? 1 - 0.3 * calmFx : 0.1) - rate) * ease(0.04);
   dt *= rate; sceneT += dt;
   const T = sceneT;
   if (lk.pre) lk.pre(T);                                       // may snapshot this frame for a crossfade
@@ -456,17 +543,29 @@ function frame(ts) {
   sceneFade += ((view === 'cover' ? 0 : 1) - sceneFade) * ease(0.06);
   if (W >= 300 && H >= TOP + 150) {                            // minimized or tiny: wait until there's room
     ctx.save();
-    if (mouse.presence > 0.001) {   // the whole scene leans with the mouse; slight overscan so no edge shows
-      const s = 1 + 0.035 * mouse.presence;
+    stepKick();
+    if (mouse.presence > 0.001 || kick > 0.0005) {   // the scene leans with the mouse and kicks on words; overscan hides the edge
+      const s = 1 + 0.035 * mouse.presence + kick;
       ctx.translate(W / 2 + mouse.px, H / 2 + mouse.py); ctx.rotate(mouse.tilt); ctx.scale(s, s); ctx.translate(-W / 2, -H / 2);
     }
     lk.frame(T);
     ctx.restore();
     if (lk.overlay) { ctx.save(); lk.overlay(T); ctx.restore(); }   // screen-fixed extras (the border light)
+    if (shocking()) {   // the shockwave rings themselves, faint, in the look's color
+      ctx.save(); ctx.strokeStyle = setAccent.last || '#fff';
+      for (const p of shocks) {
+        const age = now() - p.at;
+        if (age > SHOCK) continue;
+        ctx.globalAlpha = 0.4 * (1 - age / SHOCK) * (1 - 0.6 * calmFx); ctx.lineWidth = 2 + 6 * (1 - age / SHOCK);
+        ctx.beginPath(); ctx.arc(p.x, p.y, age * 1100, 0, 6.29); ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
-  if (now() - ghostAt < 0.8) {
+  const fade = 0.8 + calmFx;   // calm: slower crossfades
+  if (now() - ghostAt < fade) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1 - (now() - ghostAt) / 0.8; ctx.drawImage(ghost, 0, 0);
+    ctx.globalAlpha = 1 - (now() - ghostAt) / fade; ctx.drawImage(ghost, 0, 0);
     ctx.restore();
   }
   drawNotch();
@@ -501,9 +600,11 @@ async function poll() {
     view = !s.dual ? (WIN ? 'gone' : 'both') : (WIN === s.stars_on ? 'stars' : 'cover');
     document.body.className = 'view-' + view;
     if (now() - pickedAt > 0.8) {   // just picked here: this answer may predate the pick
-      if (s.look !== lookSaved) { lookSaved = s.look; setLook(s.look); }   // new song, N key, notch, or the other screen
+      if (s.look !== lookSaved) { lookSaved = s.look; if (s.lock >= 0) setLook(s.look); }   // notch or the other screen
+      songSalt = s.songs || 0;   // a new song or N: a new mix plan and new layouts
       LOOKS.forEach(l => l.poll && l.poll(s));
       lockNow = s.lock; colorNow = s.color;
+      moodNow = s.mood || 'auto'; calmIn = s.calm == null ? null : +s.calm;   // missing (Android): auto, 0.3
     }
     markNotch();
     if (s.rev !== rev) {
@@ -527,12 +628,13 @@ async function poll() {
 }
 addEventListener('pywebviewready', () => { api = pywebview.api; poll(); setInterval(poll, 250); });
 
-// ---------- the notch: stay on one look or mix them (a new one every song), and Constellation's color ----------
+// ---------- the notch: stay on one look or mix them (see mixPlan), and Constellation's color ----------
 const SWATCH = { constellation: 'radial-gradient(circle at 60% 40%, #E8D44D 0 22%, #111 26%)',
                  pulse: 'linear-gradient(135deg, #FF1F8E, #F6C4DA 55%, #2A0F1C)',
                  pop: 'conic-gradient(#CC1A4A 0 33%, #3FF0C3 0 66%, #EECB5B 0)',
                  ink: 'linear-gradient(135deg, #EEEBE3 50%, #1A1916 50%)',
-                 atlas: 'linear-gradient(135deg, #0F5A52, #04201D 55%, #C8DE78)' };
+                 space: 'radial-gradient(circle at 70% 30%, #F7A6C9 0 18%, #2A0E78 22%, #3A0A5A)',
+                 splash: 'conic-gradient(#2BFFC0 0 40%, #E8096E 0 70%, #3D0A91 0)' };
 let lockNow = -1, colorNow = -1, pickedAt = -9, mediaAt = -9, lastState = {};
 function buildNotch() {
   $('#looks').innerHTML = '<div class="chip plain" data-i="-1">Mix</div>' + LOOKS.map((l, i) =>
@@ -540,6 +642,13 @@ function buildNotch() {
   $('#colors').innerHTML = '<div class="chip plain" data-c="-1">Cycle</div>' + PALETTE.map((c, i) =>
     `<div class="dot" data-c="${i}" style="background:${c}" title="${c}"></div>`).join('');
   $('#looks').onclick = e => { const el = e.target.closest('[data-i]'); if (el) pickLook(+el.dataset.i); };
+  $('#moods').onclick = e => {   // Auto follows app.py's mood model; Calm / Lively override it
+    const el = e.target.closest('[data-mood]');
+    if (!el) return;
+    pickedAt = now(); moodNow = el.dataset.mood;
+    if (api.set_mood) api.set_mood(moodNow);
+    markNotch();
+  };
   $('#media').onclick = e => {
     const el = e.target.closest('[data-m]');
     if (!el) return;
@@ -590,13 +699,17 @@ function stepNotch(lk) {
     }
   }
 }
-function drawNotch() {   // the black shape itself, on top of everything in the canvas
+// The black shape itself, on its own small canvas over the top of the screen: kept out of the scene's canvas so a
+// look switch's crossfade (snapshot) never freezes an open notch into the picture, and calm mode's filter can't gray it.
+const nc = $('#nc'), nctx = nc.getContext('2d'), NC_H = 400;   // tall enough for the open notch plus a status bar
+function drawNotch() {
+  const d = DPR(), w = Math.round(W * d), h = Math.round(NC_H * d);
+  if (nc.width !== w || nc.height !== h) { nc.width = w; nc.height = h; }
+  nctx.setTransform(d, 0, 0, d, 0, 0); nctx.clearRect(0, 0, W, NC_H);
   const s = notchShape();
   if (!s) return;
-  ctx.save(); ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#000';
-  ctx.beginPath(); ctx.roundRect(s.x0, notch.y - 2, s.x1 - s.x0, s.y1 - notch.y + 2, [0, 0, s.rb, s.rb]); ctx.fill();
-  ctx.restore();
+  nctx.fillStyle = '#000';
+  nctx.beginPath(); nctx.roundRect(s.x0, notch.y - 2, s.x1 - s.x0, s.y1 - notch.y + 2, [0, 0, s.rb, s.rb]); nctx.fill();
 }
 function setNotchOpen(open) {
   if (open === notch.open) return;
@@ -618,6 +731,7 @@ function markNotch() {
     el.classList.toggle('cur', lockNow < 0 && i === look);
   });
   document.querySelectorAll('#colors [data-c]').forEach(el => el.classList.toggle('on', +el.dataset.c === colorNow));
+  document.querySelectorAll('#moods [data-mood]').forEach(el => el.classList.toggle('on', el.dataset.mood === moodNow));
   if (now() - mediaAt > 1.5) $('#media').classList.toggle('playing', !!clock.playing);   // after a tap, give the player time to answer
 }
 
@@ -635,14 +749,7 @@ addEventListener('keydown', e => {
   if (e.key === 'd' || e.key === 'D') { api.toggle_dual().then(toast); return; }
   if (e.key === 's' || e.key === 'S') { api.swap().then(toast); return; }
   if ((e.key === 'n' || e.key === 'N') && lockNow >= 0) { pickLook((look + 1) % LOOKS.length); toast(`Look: ${LOOKS[look].name}`); return; }
-  if (e.key === 'n' || e.key === 'N') {
-    pickedAt = now();
-    lookSaved = (lookSaved || 0) + 1;
-    const lk = setLook(lookSaved);
-    toast(`Look ${look + 1}: ${lk.name}`);
-    api.next_look();
-    return;
-  }
+  if (e.key === 'n' || e.key === 'N') { api.next_look(); toast('Mix reshuffled'); return; }
   if (LOOKS[look] && LOOKS[look].key && LOOKS[look].key(e)) return;
   if (e.key === 'ArrowRight') offset += 0.1;
   else if (e.key === 'ArrowLeft') offset -= 0.1;
@@ -657,7 +764,8 @@ addEventListener('keydown', e => {
 <script src="looks/pulse.js"></script>
 <script src="looks/pop.js"></script>
 <script src="looks/ink.js"></script>
-<script src="looks/atlas.js"></script>
+<script src="looks/space.js"></script>
+<script src="looks/splash.js"></script>
 <script>
 resize();
 buildNotch();
@@ -683,10 +791,16 @@ addEventListener('pointerdown', e => {   // touch has no hover: a tap on the not
   const s = notchShape() || { x0: W / 2 - 90, x1: W / 2 + 90, y1: 26 }, m = notch.open ? 10 : 16;
   setNotchOpen(e.clientX > s.x0 - m && e.clientX < s.x1 + m && e.clientY < s.y1 + m);
 });
+addEventListener('pointerdown', e => {   // a click below the notch sends a shockwave through the lyrics
+  const s = notchShape();
+  if (e.clientY < (s ? s.y1 : 26) + 12 || e.button > 0) return;
+  shocks.push({ x: e.clientX, y: e.clientY, at: now() });
+  if (shocks.length > 5) shocks.shift();
+});
 // Start drawing once the fonts are in, so the first layouts are measured with the real lettering.
 Promise.race([
   Promise.all(['900 40px Archivo', 'italic 900 40px Archivo', '40px "League Gothic"', '40px "Alfa Slab One"',
-               '700 40px "Josefin Sans"', '700 40px Caveat', '40px "Permanent Marker"'].map(f => document.fonts.load(f))),
+               '700 40px "Josefin Sans"', '100 40px "Josefin Sans"', '700 40px Caveat', '40px "Permanent Marker"'].map(f => document.fonts.load(f))),
   new Promise(r => setTimeout(r, 3000)),
 ]).then(() => requestAnimationFrame(frame));
 </script>

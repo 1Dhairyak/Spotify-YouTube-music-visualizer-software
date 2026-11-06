@@ -2,7 +2,7 @@
 # Output: dist/LyricConstellation/LyricConstellation.exe (one folder, zipped for the GitHub Release).
 from PyInstaller.utils.hooks import collect_all
 
-datas, binaries, hidden = [("ui", "ui"), ("songs.txt", ".")], [], []
+datas, binaries, hidden = [("ui", "ui"), ("songs.txt", "."), ("lyric_constellation/mood_model.json", "lyric_constellation")], [], []
 # packages that load data files or submodules at runtime, which the import scan alone misses
 for pkg in ("webview", "winrt", "soundcard", "shazamio", "shazamio_core", "faster_whisper"):
     d, b, h = collect_all(pkg)

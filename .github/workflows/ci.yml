@@ -9,7 +9,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      # the tested code (lyrics, cache, title cleanup) is standard library only, so the heavy runtime deps are skipped
+      # the tested code (lyrics, cache, title cleanup, mood model) needs only numpy, so the heavy runtime deps are skipped
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: pytest -q

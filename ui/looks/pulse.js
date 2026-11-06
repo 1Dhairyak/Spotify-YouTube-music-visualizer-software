@@ -1,6 +1,7 @@
 // Look 2: Pink Poster (from the BLACKPINK "Crazy Over You" kinetic-typography video).
 // Morphing pink/maroon gradient blobs with film grain, extra-wide heavy caps that show as outline ghosts and fill in
-// as they're sung, small edge captions, giant outline letters, echo rows, a lettered sphere and shattering glass.
+// as they're sung, small edge captions, giant outline letters, echo rows, a lettered sphere and shattering glass,
+// words split in two 3D halves that slide past each other ("LO / CO"), and a framed card with the line running round it.
 (() => {
   const HOT = '#FF1F8E', LILAC = '#F48FD8', MAROON = '#2B1020';
   const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
@@ -72,10 +73,10 @@
     const longest = ws.reduce((a, b) => (b.w.length > a.w.length ? b : a));
     const dark = r() < 0.45;
     let type;
-    if (n === 1) type = r() < 0.6 ? 'big' : 'echo';
-    else if (n <= 3) type = pickR(r, ['echo', 'echo', 'sphere', 'stack', 'pair']);
-    else if (n <= 5) type = pickR(r, text.length <= 18 ? ['stack', 'pair', 'echo', 'sphere'] : ['stack', 'pair', 'stack']);
-    else type = pickR(r, ['stack', 'pair', 'stack']);
+    if (n === 1) type = longest.w.length >= 4 && r() < 0.4 ? 'split' : r() < 0.6 ? 'big' : 'echo';
+    else if (n <= 3) type = pickR(r, ['echo', 'echo', 'sphere', 'stack', 'pair', 'split', 'frame']);
+    else if (n <= 5) type = pickR(r, text.length <= 18 ? ['stack', 'pair', 'echo', 'sphere', 'frame'] : ['stack', 'pair', 'stack', 'frame']);
+    else type = pickR(r, ['stack', 'pair', 'stack', 'frame']);
     const L = { type, dark, items: [], rows: [], exit: r() < 0.5 ? 'blur' : 'slice', marquee: r() < 0.28,
                 edge: caps(longest.w), giant: caps(longest.w.replace(/[^a-z]/gi, '')).slice(0, 2) || 'O',
                 giantX: pickR(r, [0.1, 0.62, 0.86]), shatter: r() < 0.45 };
@@ -107,6 +108,20 @@
         const outline = rows.length > 2 && r() < 0.32;
         L.items.push(...rowItems(rw, S.cx - rowWidth(rw, px, it) / 2, y0 + i * lh, px, it, ghostFill, outline));
       });
+    } else if (type === 'split') {   // the longest word cut in two; the halves come in from both sides, offset
+      const s = caps(longest.w), cut = Math.ceil(s.length / 2), a = s.slice(0, cut), b = s.slice(cut);
+      const px = Math.min(S.h * 0.34, 100 * W * 0.4 / measure(a.length > b.length ? a : b, 100, true));
+      L.split = { a, b, px, wd: longest, wa: measure(a, px, true), wb: measure(b, px, true) };
+      L.items = rowItems(ws.filter(w => w !== longest), W * 0.07, S.y + S.h * 0.86, Math.min(S.h * 0.06, px * 0.25), false, 'white');
+      L.dark = true;
+    } else if (type === 'frame') {   // a light card in the middle, the line stacked on it, the words running round its edge
+      const cw = Math.min(W * 0.62, S.h * 1.3), ch = S.h * 0.66, rows = n <= 3 ? [ws] : [ws.slice(0, Math.ceil(n / 2)), ws.slice(Math.ceil(n / 2))];
+      const px = Math.min(...rows.map(rw => 100 * cw * 0.8 / rowWidth(rw, 100, true)), ch * 0.3), lh = px * 0.95;
+      const y0 = S.cy - (rows.length * lh) / 2 + lh * 0.78;
+      rows.forEach((rw, i) => L.items.push(...rowItems(rw, S.cx - rowWidth(rw, px, true) / 2, y0 + i * lh, px, true, i ? 'hot' : 'dark', false)));
+      L.items.forEach(it => { it.card = true; });
+      L.frame = { x: S.cx - cw / 2, y: S.cy - ch / 2, w: cw, h: ch, s: text };
+      L.dark = true;
     } else if (type === 'pair') {
       let cut = Math.ceil(n / 2);
       const a = ws.slice(0, cut), b = ws.slice(cut);
@@ -164,6 +179,7 @@
       const p = sung(it.wd, t, 0.12), q = easeOut(sung(it.wd, t, 0.35));
       const appear = easeOut((T - sc.at) / 0.35);
       ctx.save(); warp(it.x + it.w / 2, it.y - it.px * 0.36);   // pushed aside and magnified by the mouse
+      punchAt(it.wd, t, it.x + it.w / 2, it.y - it.px * 0.36, it.px, 0.7);   // and pops as it's sung
       drawItem(it, p, q, appear, t, alphaAll);
       ctx.restore();
     }
@@ -182,7 +198,7 @@
     // ghost outline until sung, then fill slides in
     ctx.globalAlpha = alphaAll * appear * (it.outline ? 0.9 : 0.75 * (1 - p));
     if (ctx.globalAlpha > 0.004)
-      drawText(outline(it.s, it.px, it.it, it.fill === 'white' ? 'rgba(255,255,255,0.8)' : inkQ(), Math.max(1, it.px / 70)), it.x, it.y);
+      drawText(outline(it.s, it.px, it.it, it.card ? 'rgba(43,16,32,0.6)' : it.fill === 'white' ? 'rgba(255,255,255,0.8)' : inkQ(), Math.max(1, it.px / 70)), it.x, it.y);
     if (p > 0 && !it.outline) {
       ctx.globalAlpha = alphaAll * p;
       ctx.fillStyle = fillFor(it, 1);
@@ -245,6 +261,40 @@
     // rim light
     ctx.globalAlpha = a * 0.5; ctx.strokeStyle = '#FF7AB8'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.29); ctx.stroke();
+  }
+
+  function drawSplit(sc, t, T, a) {   // two extruded halves sliding in from opposite sides, then drifting apart
+    const S = stage(), Sp = sc.L.split, p = easeOut(sung(Sp.wd, t, 0.45)), drift = Math.max(0, t - Sp.wd.t) * 6;
+    const halves = [[Sp.a, S.cx - Sp.wa * 0.78 - drift, S.cy + Sp.px * 0.08, -1], [Sp.b, S.cx - Sp.wa * 0.1 + drift, S.cy - Sp.px * 0.42, 1]];
+    halves.forEach(([s, x, y, side]) => {
+      const ox = side * (1 - p) * W * 0.45;
+      ctx.save(); warp(x + ox + Sp.px, y - Sp.px * 0.36); punchAt(Sp.wd, t, x + ox + Sp.px, y - Sp.px * 0.36, Sp.px, 0.5);
+      font(Sp.px, true); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.globalAlpha = a * Math.min(1, p * 1.6 + 0.15);
+      const depth = Math.round(Sp.px * 0.09);
+      ctx.fillStyle = '#3A0F24';
+      for (let k = depth; k > 0; k -= 2) ctx.fillText(s, x + ox + k, y + k);   // the 3D sides
+      const g = ctx.createLinearGradient(x + ox, y - Sp.px, x + ox, y);
+      g.addColorStop(0, '#FFE1EF'); g.addColorStop(1, '#FF3D9A');
+      ctx.fillStyle = g; ctx.fillText(s, x + ox, y);
+      ctx.restore();
+    });
+  }
+  function drawFrame(sc, T, a) {   // the card, and the line running round just inside its edge
+    const F = sc.L.frame, e = easeOut((T - sc.at) / 0.45), cx = F.x + F.w / 2, cy = F.y + F.h / 2;
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(0.85 + 0.15 * e, 0.85 + 0.15 * e); ctx.translate(-cx, -cy);
+    ctx.globalAlpha = a * e;
+    const g = ctx.createLinearGradient(F.x, F.y, F.x + F.w, F.y + F.h);
+    g.addColorStop(0, '#FFD6EA'); g.addColorStop(0.55, '#F48FD8'); g.addColorStop(1, '#FFF2F8');
+    ctx.fillStyle = g; ctx.fillRect(F.x, F.y, F.w, F.h);
+    const px = clamp(F.h * 0.035, 9, 15), unit = F.s + '      ', m = 12;
+    font(px, false, 800); ctx.fillStyle = MAROON; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const uw = ctx.measureText(unit).width, off = (T * 45) % uw;
+    const run = len => { for (let x = -off; x < len; x += uw) ctx.fillText(unit, x, 0); };
+    for (const [x, y, rot, len] of [[F.x, F.y + m, 0, F.w], [F.x + F.w - m, F.y, Math.PI / 2, F.h], [F.x + F.w, F.y + F.h - m, Math.PI, F.w], [F.x + m, F.y + F.h, -Math.PI / 2, F.h]]) {
+      ctx.save(); ctx.beginPath(); ctx.rect(F.x, F.y, F.w, F.h); ctx.clip(); ctx.translate(x, y); ctx.rotate(rot); run(len); ctx.restore();
+    }
+    ctx.restore();
   }
 
   function drawBlock(sc, T) {   // dark block sweeping right to left over a title pair, revealing it
@@ -340,6 +390,8 @@
     const L = sc.L;
     if (L.type === 'echo') drawEcho(sc, t, T, a);
     if (L.type === 'sphere') return drawSphere(sc, t, T, a);
+    if (L.type === 'split') drawSplit(sc, t, T, a);
+    if (L.type === 'frame') drawFrame(sc, T, a);
     let revealX = 0;
     if (L.block && T - sc.at < 0.6) revealX = drawBlock(sc, T);
     ctx.save();
@@ -375,7 +427,7 @@
       if (d.prev) drawExit(d.prev, d.t, T, (T - d.prev.out) / this.exit);
       drawScene(cur, d.t, T, sceneFade);
       // shatter once when a big line-end word lands
-      const hit = !cur.card && L.shatter && L.items.find(it => it.wd.end && sung(it.wd, d.t) > 0);
+      const hit = !cur.card && L.shatter && !calmMode && L.items.find(it => it.wd.end && sung(it.wd, d.t) > 0);
       if (hit && !cur.shattered) { cur.shattered = true; font(hit.px, hit.it); shatter(hit.x + hit.w / 2, hit.y - hit.px * 0.4, T); }
       drawShards(T);
       drawEdges(cur, T, sceneFade);
