@@ -5,7 +5,7 @@ Two logistic regressions trained by tools/train_mood.py (weights in mood_model.j
 - sound: brightness, percussion, beat regularity and dynamics of what the speakers play, all independent of volume.
 A fusion layer joins them; the sound counts more as more of the song is heard. 1 = emotional, 0 = lively.
 """
-import logging, math, re, threading, time
+import logging, math, re
 
 import numpy as np
 
@@ -152,39 +152,25 @@ class SongMood:
 
 
 class MoodListener:
-    """Listens to the speakers while a song plays and feeds WINDOW-second measurements into player.mood."""
+    """Feeds WINDOW-second measurements of what the speakers play into player.mood while a song plays."""
 
     def __init__(self, player):
-        self.player = player
+        self.player, self.buf, self.mood = player, [], None
 
-    def start(self):
+    def start(self, speakers):
         if MODEL:
-            threading.Thread(target=self.record, daemon=True).start()
+            speakers.listen(2, self.hear)
         else:
             log.info("mood model missing: every song gets the lively look")
 
-    def record(self):
-        import ctypes
-        import soundcard as sc
-        ctypes.windll.ole32.CoInitializeEx(None, 0)  # soundcard needs COM on this thread
-        n = RATE * 2
-        while True:
-            try:  # reopened if the output device changes or goes away
-                mic = sc.get_microphone(str(sc.default_speaker().name), include_loopback=True)
-                with mic.recorder(samplerate=RATE) as rec:
-                    buf, mood = [], None
-                    while True:
-                        block = rec.record(numframes=n).mean(axis=1)
-                        cur = self.player.mood
-                        if cur is not mood or not self.player.playing:   # new song or paused: start a fresh window
-                            buf, mood = [], cur
-                            continue
-                        buf.append(block)
-                        if len(buf) * 2 >= WINDOW:
-                            feats = audio_features(np.concatenate(buf))
-                            if feats and mood:
-                                mood.add(feats, len(buf) * 2)
-                            buf = []
-            except Exception:
-                log.exception("mood listener")
-                time.sleep(5)
+    def hear(self, block):
+        cur = self.player.mood
+        if cur is not self.mood or not self.player.playing:   # new song or paused: start a fresh window
+            self.buf, self.mood = [], cur
+            return
+        self.buf.append(block)
+        if len(self.buf) * 2 >= WINDOW:
+            feats = audio_features(np.concatenate(self.buf))
+            if feats and self.mood:
+                self.mood.add(feats, len(self.buf) * 2)
+            self.buf = []

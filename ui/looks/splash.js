@@ -176,6 +176,7 @@
         const f = reveal(it.wd, t, 0.3);
         if (f <= 0 || it.ch === ' ') return;
         const ang = it.ang + rot, x = L.cx + Math.cos(ang) * L.R, y = L.cy + Math.sin(ang) * L.R, j = rng(L.seed + i + boilAt(T));
+        hitWord(it.wd, t, x, y, L.px);
         ctx.save(); warp(x, y); ctx.translate(x, y); ctx.rotate(ang + Math.PI / 2 + (j() - 0.5) * 0.08);
         const k = backOut(f) * punch(it.wd, t).s; ctx.scale(k, k); ctx.globalAlpha = a * Math.min(1, f * 2);
         ctx.fillText(it.ch, 0, 0); ctx.restore();

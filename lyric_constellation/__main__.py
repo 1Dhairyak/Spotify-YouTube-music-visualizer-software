@@ -9,6 +9,8 @@
 import asyncio, logging, logging.handlers, os, sys, threading, warnings
 
 from . import DATA, ROOT, __version__, migrate_old_data
+from .audio import Speakers
+from .beat import BeatListener
 from .learner import Learner
 from .lyrics import clean, cover_url, fetch_lyrics, words_for
 from .media import Player, read_session, run_watch
@@ -78,6 +80,15 @@ def setup_logging():
     warnings.filterwarnings("ignore", message="data discontinuity in recording")
 
 
+def listen_and_watch(player):
+    speakers = Speakers()
+    Learner(player).start(speakers)
+    MoodListener(player).start(speakers)
+    speakers.listen(1, BeatListener(player).hear)
+    threading.Thread(target=speakers.run, daemon=True).start()
+    run_watch(player)
+
+
 def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     if arg == "--version":
@@ -94,7 +105,7 @@ def main():
         player = Player()
         if arg == "--demo":
             demo(player, float(sys.argv[2]) if len(sys.argv) > 2 else 0)
-        show(player, None if arg == "--demo" else lambda: (Learner(player).start(), MoodListener(player).start(), run_watch(player)))
+        show(player, None if arg == "--demo" else lambda: listen_and_watch(player))
 
 
 if __name__ == "__main__":

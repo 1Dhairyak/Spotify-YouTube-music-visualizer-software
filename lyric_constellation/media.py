@@ -33,7 +33,8 @@ async def read_session(s):
             pos += (datetime.now(timezone.utc) - tl.last_updated_time).total_seconds()
         pos = min(pos, dur)
     return {"app": s.source_app_user_model_id or "", "title": p.title, "artist": p.artist,
-            "playing": playing, "pos": pos, "dur": dur or None, "thumb": p.thumbnail}
+            "playing": playing, "pos": pos, "dur": dur or None, "thumb": p.thumbnail, "session": s,
+            "can_seek": s.get_playback_info().controls.is_playback_position_enabled}
 
 
 async def read_thumb(ref):
@@ -88,6 +89,22 @@ class Player:
         self.lyrics = None  # fetch_lyrics' result for the track shown, for Learner
         self.last_heard = -999.0
         self.mood = None  # SongMood of the track shown: how emotional it is (MoodListener adds what it hears)
+        self.beat = None  # the latest tempo and beat of what's playing (beat.py)
+        self.session, self.dur, self.can_seek = None, None, False  # the player we follow, for seeking
+        self.loop, self.seeking_until = None, 0.0
+
+    def seek(self, sec):
+        """Ask the player to jump there. Its own position lags behind, so it's ignored for a moment (see watch)."""
+        s, loop = self.session, self.loop
+        if not (s and loop and self.can_seek and self.dur):
+            return
+        sec = max(0.0, min(float(sec), self.dur))
+
+        async def ask():
+            await s.try_change_playback_position_async(int(sec * 10_000_000))
+        asyncio.run_coroutine_threadsafe(ask(), loop)
+        self.set_clock(sec, self.playing)
+        self.seeking_until = time.monotonic() + 1.5
 
     def set_clock(self, pos, playing):
         self.pos, self.at, self.playing = pos, time.monotonic(), playing
@@ -184,6 +201,7 @@ async def watch(player):
     from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as Manager
     mgr = await Manager.request_async()
     key, loader, listener = None, None, None
+    player.loop = asyncio.get_running_loop()
     while True:
         await asyncio.sleep(0.25)
         try:
@@ -192,6 +210,7 @@ async def watch(player):
             continue
         cur = next((i for i in infos if i["playing"]), infos[0] if infos else None)
         player.timed = bool(cur and cur["pos"] is not None)
+        player.session, player.dur, player.can_seek = (cur["session"], cur["dur"], cur["can_seek"]) if cur else (None, None, False)
         if not cur or not (cur["title"] or cur["playing"]):
             # e.g. Chrome with media-key handling off reports nothing: identify by sound instead
             if key and key[0] != "sound":
@@ -216,6 +235,8 @@ async def watch(player):
             player.tid += 1
             player.set_clock(cur["pos"] or 0, cur["playing"])
             loader = asyncio.create_task(load_track(player, cur))
+        elif time.monotonic() < player.seeking_until:   # just seeked: the player hasn't caught up yet
+            pass
         elif cur["pos"] is not None:
             player.set_clock(cur["pos"], cur["playing"])
         else:  # no timeline from this player: keep counting from track start (or Shazam's position)

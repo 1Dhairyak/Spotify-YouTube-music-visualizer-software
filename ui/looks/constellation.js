@@ -1,4 +1,4 @@
-// Look 1: Constellation. Yellow stars and lines from the original reference video, with 6 sub-styles that
+// Look 1: Constellation. Yellow stars and lines from the original reference video, with 7 sub-styles that
 // rotate every 30 s, 15 colors that rotate every 20 s, and a light circling the screen edge.
 
 // The whole scene moves to the next color every COLOR_EVERY seconds of the song, starting on the video's yellow.
@@ -10,11 +10,48 @@ let ACCENT = PALETTE[0];
 const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 // A color picked in the notch holds (-1 = cycle); switching blends from the color on screen over a second.
 let colorPick = -1, pickFrom = null, pickAt = -9, shownRGB = rgb(PALETTE[0]);
+// The "Cover" color: the album art's strongest hue, made vivid enough to glow on black. Art with no color (a black and
+// white cover) has none, and the first palette color stands in.
+const coverImg = new Image();
+coverImg.crossOrigin = 'anonymous';   // Apple's art server allows it; without this the pixels can't be read
+let coverSrc = null, coverRGB = null;
+function coverColor() {
+  if (track.art !== coverSrc) {
+    coverSrc = track.art;
+    if (coverSrc) coverImg.src = coverSrc; else coverRGB = null;
+  }
+  return coverRGB;
+}
+coverImg.onload = () => {
+  let found = null;
+  try { found = vividHue(coverImg); } catch (e) { console.error(e); }   // art that can't be read just has no cover color
+  if (colorPick === -2) { pickFrom = shownRGB; pickAt = sceneT; }
+  coverRGB = found;
+};
+coverImg.onerror = () => { coverRGB = null; };
+function vividHue(img) {
+  const c = document.createElement('canvas'); c.width = c.height = 24;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 24, 24);
+  const px = g.getImageData(0, 0, 24, 24).data, bins = Array.from({ length: 12 }, () => ({ w: 0, x: 0, y: 0 }));
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i] / 255, gn = px[i + 1] / 255, b = px[i + 2] / 255, max = Math.max(r, gn, b), min = Math.min(r, gn, b), d = max - min;
+    const l = (max + min) / 2, s = d / (1 - Math.abs(2 * l - 1) || 1);
+    if (d < 0.04 || l < 0.1 || l > 0.93 || s < 0.25) continue;   // grays, near-blacks and near-whites have no hue worth keeping
+    const h = (max === r ? (gn - b) / d + 6 : max === gn ? (b - r) / d + 2 : (r - gn) / d + 4) % 6 * 60;
+    const bin = bins[Math.floor(h / 30) % 12], w = s * s;
+    bin.w += w; bin.x += w * Math.cos(h * Math.PI / 180); bin.y += w * Math.sin(h * Math.PI / 180);
+  }
+  const top = bins.reduce((a, b) => (b.w > a.w ? b : a));
+  if (top.w < 8) return null;   // too little color in the whole picture
+  const h = (Math.atan2(top.y, top.x) * 180 / Math.PI + 360) % 360, s = 0.85, l = 0.62;
+  const f = n => { const k = (n + h / 30) % 12; return 255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1))); };
+  return [f(0), f(8), f(4)];
+}
 function accent() {
   const t = Math.max(0, songTime()), i = Math.floor(t / COLOR_EVERY), n = PALETTE.length;
   const from = rgb(PALETTE[(i - 1 + n) % n]), to = rgb(PALETTE[i % n]);
   const f = i ? Math.min(1, (t - i * COLOR_EVERY) / COLOR_FADE) : 1;
-  let c = colorPick >= 0 ? rgb(PALETTE[colorPick]) : to.map((v, k) => from[k] + (v - from[k]) * f);
+  let c = colorPick === -2 ? coverColor() || rgb(PALETTE[0]) : colorPick >= 0 ? rgb(PALETTE[colorPick]) : to.map((v, k) => from[k] + (v - from[k]) * f);
   const p = easeInOut(Math.min(1, (sceneT - pickAt) / 1));
   if (pickFrom && p < 1) c = c.map((v, k) => pickFrom[k] + (v - pickFrom[k]) * p);
   shownRGB = c;
@@ -320,7 +357,7 @@ function border(T) {
   const q = c => `rgb(${c.map(v => Math.round(v / 12) * 12).join(',')})`;   // a few cached sprite colors, not one per frame
   const accentQ = q(shownRGB), core = q(shownRGB.map(v => v + (255 - v) * 0.6));   // glassy: near-white center
   ctx.shadowBlur = 0;
-  ctx.globalAlpha = 0.85 + 0.15 * Math.sin(T * 1.2);   // breathing
+  ctx.globalAlpha = Math.min(1, 0.78 + 0.12 * Math.sin(T * 1.2) + 0.3 * beatFx);   // breathing, and brighter on the beat
   edgeGlow(F, accentQ);
   // The tail: points along the real path at the edge's step (so it hugs every corner), drawn as N fading bands
   const M = Math.ceil(len / (isPhone() ? 2.5 : 1.5));
@@ -407,7 +444,7 @@ function draw(T) {
     const settle = next ? easeOut((T - next.born) / 0.4) : 0;
     const r = (8 + (3 - 8) * settle) * backOut((T - n.born) / 0.35);
     ctx.globalAlpha = a * (isCur ? 1 : 0.75 + 0.25 * Math.sin(T * 2 + n.seed));
-    if (isCur) { glowAt(p.x, p.y, r * 3.2, haloColor(), a * 0.55); ctx.globalAlpha = a; }
+    if (isCur) { glowAt(p.x, p.y, r * 3.2 * (1 + 0.25 * beatFx), haloColor(), a * 0.55); ctx.globalAlpha = a; }
     (st.marker || sparkle)(p.x, p.y, r, isCur, a);
     if (T - n.born < 0.7) flare(p.x, p.y, T - n.born, a * (n.end ? 1 : 0.6));   // a word just sung: its star flares
 
@@ -423,6 +460,7 @@ function draw(T) {
     const ly = Math.max(p.y - r - 6, TOP - 16 + size);   // above its star, but never up under the song title
     const inside = clamp((Math.min(p.x, W - p.x) + 20) / 40, 0, 1);   // a star scrolled past a side: its label fades out
     ctx.save();
+    hitWord({ w: n.w, t: n.born }, T, lx, ly - size * 0.4, size);
     const pk = punch({ w: n.w, t: n.born }, T, n.end ? 1 : 0.6).s * (p.s || 1);   // the lens, and the pop as it's sung
     if (pk !== 1) { ctx.translate(lx, ly); ctx.scale(pk, pk); ctx.translate(-lx, -ly); }
     if (s < 0.5) drawHalo(n.w, font, size, haloColor(), 18, lx, ly, 'center', 'bottom', a * inside * (1 - 2 * s));

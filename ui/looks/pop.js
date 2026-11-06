@@ -221,6 +221,7 @@
     if (p <= 0) return;
     ctx.font = it.font; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     if (it.script) {   // handwriting: written on left to right
+      hitWord(it.wd, t, it.x + it.w / 2, it.y - it.h / 2, it.h);
       ctx.save(); warp(it.x + it.w / 2, it.y - it.h / 2); ctx.beginPath(); ctx.rect(it.x - 10, it.y - it.h * 1.2, (it.w + 20) * clamp((t - it.wd.t) / 0.4, 0, 1), it.h * 1.8); ctx.clip();
       ctx.globalAlpha = a; ctx.fillStyle = it.color; ctx.fillText(it.s, it.x, it.y); ctx.restore();
       return;
@@ -278,7 +279,7 @@
     for (const lt of L.letters) {
       const p = sung(lt.wd, t, 0.2);
       if (p <= 0) continue;
-      ctx.save(); ctx.rotate(lt.a); ctx.translate(L.rad + (1 - p) * 20, 0); ctx.rotate(Math.PI / 2); warp(0, 0);
+      ctx.save(); ctx.rotate(lt.a); ctx.translate(L.rad + (1 - p) * 20, 0); ctx.rotate(Math.PI / 2); warp(0, 0); punchAt(lt.wd, t, 0, 0, L.px, 0.6);
       ctx.globalAlpha = a * p; ctx.fillText(lt.c, 0, 0); ctx.restore();
     }
     ctx.restore();
