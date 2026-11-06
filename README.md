@@ -10,11 +10,11 @@
 **Android 8+:** open the `.apk` on your phone to install it (allow installing from your browser or files app when asked), then allow
 the *microphone*: play a song out loud nearby and the app recognizes it (like Shazam) within about 10 seconds, then
 listens again every 20 seconds to stay in time and notice a new song or a pause. It only listens while it is open on
-screen. The Android app has the Constellation look with its color picker; the Windows app has all 6 looks.
+screen. The Android app has the Constellation look with its color picker; the Windows app has all 7 looks.
 
 A lightweight Windows app that turns whatever you're playing on Spotify, YouTube Music or YouTube into time-synced kinetic-typography lyrics. It runs full screen on the monitors you choose.
 
-Each song gets the next of 6 looks, in turn (or pick **Mix** in the notch to switch every few lines):
+Each song gets the next of 7 looks, in turn (or pick **Mix** in the notch to switch every few lines):
 
 | Look | Style |
 |---|---|
@@ -23,6 +23,7 @@ Each song gets the next of 6 looks, in turn (or pick **Mix** in the notch to swi
 | Pop Colors | Flat bold colors with wipes, justified blocks of mixed fonts, hatched 3D shadows, ring text, handwriting with splats, tumbling 3D slab words, small lead-ins over a giant word |
 | Ink Sketch | Paper and blackboard with ink floods, brush caps, hand-drawn bubbles, signboard, bulbs, footsteps, a glass that fills as the line is sung, a speech balloon |
 | Deep Space | Indigo sky with stars, a ringed planet and comets; thin and bold caps that drop, squeeze and slide in; warp streaks; flat color cut-ins with speed lines and a one-word band; RGB-split exits |
+| Motion | White type on black and navy, 39 text effects (bounce, neon, mirror, slice, drip, handwriting...), each plays 3 times, then the next from a shuffled deck, and a sung line keeps repeating until the next one; **E** steps through them |
 | Splash | Flat mint, indigo and magenta with brush-swipe and flood changes, boiling hand lettering, giant dry-brush words, words round a circle, word stairs and flying ink blobs |
 
 - **No login.** It reads the song from Windows' media controls (the title in the volume popup).
@@ -48,7 +49,9 @@ python app.py --demo 15    # demo with the first song in songs.txt, starting at 
 
 Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anywhere.
 
-**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (looks take turns every 5-10 s, each with a random variant, in a new order every play), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. On emotional songs the app goes calm: muted colors, slower motion, gentler pops, and Mix sticks to the quiet looks for 12-20 s each; **Auto · Calm · Lively** in the notch lets it decide or forces one for the song playing; the next song starts on Auto. The notch also has a seek bar (when the player allows jumping) and Windows volume buttons, one small TV button per screen at its top right (lit = the app shows there, tap to switch; it starts on one and remembers your choice), and Constellation can take its color from the **album cover**. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
+**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (looks take turns every 5-10 s, each with a random variant, in a new order every play; Motion gets about half the time), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. On emotional songs the app goes calm: muted colors, slower motion, gentler pops, and Mix sticks to the quiet looks for 12-20 s each; **Auto · Calm · Lively** in the notch lets it decide or forces one for the song playing; the next song starts on Auto. The notch also has a seek bar (when the player allows jumping) and Windows volume buttons, one small TV button per screen at its top right (lit = the app shows there, tap to switch; it starts on one and remembers your choice), and Constellation can take its color from the **album cover**. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
+
+**The countdown:** the bottom right corner shows the time left in the song, growing big and glowing for the last minute.
 
 **The mouse:** every look reacts to it. Words and stars near the cursor are pushed aside and magnified, then spring back; the scene leans with it; the edge light bends toward it, ripples when you sweep past and races to meet it. **Click** a word to burst it into sparks and make it pop again, or anywhere else to send a shockwave that knocks the lyrics outward. Every word pops as it's sung, the scene kicks in on each line and pulses softly on the beat of the music. Drawing keeps pace with the screen's refresh rate (180 Hz included).
 
@@ -60,6 +63,7 @@ Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anyw
 | F12 / F11, Esc | Toggle full screen / leave it |
 | N | Next look; in Mix, reshuffle the order |
 | T, 1–7 | In Constellation: next sub-style / pick one (they also rotate every 30 s) |
+| E | In Motion: next effect by number, Shift+E goes back (past the last one: random again) |
 | D / S | All screens or one / swap what each screen shows |
 | ← / →, 0 | Shift lyric timing / reset |
 

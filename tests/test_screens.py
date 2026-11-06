@@ -141,3 +141,14 @@ def test_closing_a_window_quits_but_our_own_closing_does_not(setup, monkeypatch)
     api.toggle_screen(2)
     made[1].events.closed.fn()                                  # the user pressed Alt+F4 on it
     assert quit == [0]
+
+
+def test_the_countdown_knows_the_length_from_the_player_or_the_lyrics(setup):
+    api, _, _ = setup(mon(0))
+    assert api.state()["dur"] is None                           # unknown: the UI hides the countdown
+    p = api._player
+    p.tid = 1
+    p.publish("Song", "Artist", None, [], "", {"lrc": "[00:01.00]hi", "duration": 200})
+    assert api.state()["dur"] == 200                            # identified by sound: LRCLIB knows the length
+    p.dur = 215.5
+    assert api.state()["dur"] == 215.5                          # the player itself wins

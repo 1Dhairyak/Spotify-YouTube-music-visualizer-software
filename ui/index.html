@@ -13,6 +13,7 @@
   @font-face { font-family: 'Alfa Slab One'; src: url(fonts/alfa-slab-one.woff2) format('woff2'); }
   @font-face { font-family: 'Josefin Sans'; src: url(fonts/josefin-sans.woff2) format('woff2'); font-weight: 100 700; }
   @font-face { font-family: 'Caveat'; src: url(fonts/caveat.woff2) format('woff2'); font-weight: 400 700; }
+  @font-face { font-family: 'Montserrat'; src: url(fonts/montserrat.woff2) format('woff2'); font-weight: 100 900; }
   @font-face { font-family: 'Permanent Marker'; src: url(fonts/permanent-marker.woff2) format('woff2'); }
 
   :root { --accent: #e8d44d; --bg: #000; }
@@ -129,6 +130,11 @@
   .phone .mbtn { width: 46px; height: 46px; }   /* finger-sized on phones */
   .phone .mbtn.play { width: 56px; height: 56px; }
 
+  /* Time left in the song: small all the way, big and glowing for the last minute */
+  #left { position: fixed; right: 34px; bottom: 26px; z-index: 3; font: 800 76px Montserrat, sans-serif; font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+    color: var(--accent); opacity: 0; transform: scale(.3); transform-origin: 100% 100%; pointer-events: none; transition: opacity .5s, transform .8s, text-shadow .8s; }
+  #left.on { opacity: .75; }
+  #left.on.end { opacity: 1; transform: none; text-shadow: 0 0 34px color-mix(in srgb, var(--accent) 70%, transparent); }
   /* The cursor: a soft glow in the look's color instead of the arrow; fades after 2 s still */
   html, body, * { cursor: none !important; }
   #cursor { position: fixed; left: 0; top: 0; z-index: 10; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
@@ -144,6 +150,7 @@
 <div id="cover"><img alt=""><div class="t"></div><div class="a"></div></div>
 <div id="status"></div>
 <div id="toast"></div>
+<div id="left"></div>
 <div id="notch"><div class="in">
   <div class="row" id="media">
     <div class="mbtn vol" data-m="vol-" title="Volume down"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM16 11h5v2h-5z"/></svg></div>
@@ -238,20 +245,21 @@ function glowAt(x, y, r, color, a) {
   if (a <= 0.004) return;
   ctx.globalAlpha = a; ctx.drawImage(glowSprite(color, r), x - r, y - r, 2 * r, 2 * r);
 }
-// Glowing text: a word's blurred halo, rendered once at 64 px and scaled to any size, then pasted under the crisp text.
+// Glowing text: a word's blurred halo, rendered once at 96 px and scaled to any size, then pasted under the crisp text.
+// blur is in units of a 64 px font, so it looks the same whatever B is.
 const halos = new Map();
 function drawHalo(s, font, px, color, blur, x, y, align, baseline, a) {   // font: px => CSS font string
   if (a <= 0.004 || !s) return;
-  const B = 64, sc = px / B, k = s + '|' + font(B) + '|' + color + '|' + blur;
+  const B = 96, sc = px / B, k = s + '|' + font(B) + '|' + color + '|' + blur;
   let c = halos.get(k);
   if (!c) {
-    if (halos.size > 200) halos.clear();
+    if (halos.size > 120) halos.clear();
     const g0 = document.createElement('canvas').getContext('2d');
     g0.font = font(B); const m = g0.measureText(s);
-    const pad = Math.ceil(blur * 2), asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent;
+    const soft = blur * B / 64, pad = Math.ceil(soft * 2), asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent;
     c = document.createElement('canvas'); c.width = Math.ceil(m.width) + pad * 2; c.height = Math.ceil(asc + desc) + pad * 2;
     const g = c.getContext('2d');
-    g.font = font(B); g.textBaseline = 'alphabetic'; g.fillStyle = g.shadowColor = color; g.shadowBlur = blur;
+    g.font = font(B); g.textBaseline = 'alphabetic'; g.fillStyle = g.shadowColor = color; g.shadowBlur = soft;
     g.fillText(s, pad, pad + asc);
     Object.assign(c, { pad, asc, desc, tw: m.width });
     halos.set(k, c);
@@ -473,13 +481,16 @@ function noiseTile(size, light, alpha) {
   return c;
 }
 
-// Full-screen layers that never change (gradients, vignettes) are drawn once per screen size and reused:
+// Full-screen layers that never change (gradients, vignettes) are drawn once per screen size, at its real pixels, and reused:
 // a big gradient fill costs ~9 ms a frame, pasting the cached image almost nothing.
 const layers = new Map();
 function layer(key, draw) {
-  const k = `${key}@${W}x${H}`;
+  const d = DPR(), k = `${key}@${W}x${H}@${d}`;
   let c = layers.get(k);
-  if (!c) { c = document.createElement('canvas'); c.width = W; c.height = H; draw(c.getContext('2d')); layers.set(k, c); }
+  if (!c) {
+    c = document.createElement('canvas'); c.width = Math.round(W * d); c.height = Math.round(H * d);
+    const g = c.getContext('2d'); g.scale(d, d); draw(g); layers.set(k, c);
+  }
   return c;
 }
 
@@ -564,10 +575,11 @@ function setLook(i) {
   return lk;
 }
 // Mix: looks take turns every 5-10 s, each switch at the start of a line, never one of the last two looks again.
+// Motion has the most to show, so it comes back after most other turns and stays longer: about half of a song.
 // Planned from the song's lines and a number that changes every song, so both screens agree, a seek lands on the
 // same look, and the next play of the song gets a different order. `sub` picks the variant inside a look.
 let songSalt = 0, mixSeg = null;
-const CALM_LOOKS = ['constellation', 'ink', 'space'];
+const CALM_LOOKS = ['constellation', 'ink', 'space', 'motion'];
 const mixing = () => lockNow < 0 && LOOKS.length > 1 && !isPhone();
 function mixPlan() {
   const P = track.phrases;
@@ -575,14 +587,17 @@ function mixPlan() {
   const r = rng(hash(track.title + ':mix:' + songSalt)), plan = [];
   const calmPool = LOOKS.map((l, i) => CALM_LOOKS.includes(l.id) ? i : -1).filter(i => i >= 0);
   const pool = calmMode && calmPool.length ? calmPool : [...LOOKS.keys()], n = pool.length;   // calm: the quiet looks only
+  const motion = LOOKS.findIndex(l => l.id === 'motion');
   const starts = P.length ? P.map(p => p.t0 - LEAD) : Array.from({ length: 200 }, (_, i) => i * 8);   // no lyrics: every 8 s
   let next = -Infinity;
   for (const t of starts) {
     if (t < next) continue;
     const recent = plan.slice(-Math.min(2, n - 1)).map(s => s.look), used = i => plan.filter(s => s.look === i).length;
-    const free = pool.filter(i => !recent.includes(i)), least = Math.min(...free.map(used));
-    plan.push({ t, look: pickR(r, free.filter(i => used(i) <= least + 1)), sub: Math.floor(r() * 1e6) });   // the least shown go first
-    next = t + (calmMode ? 12 + r() * 8 : 5 + r() * 5);
+    const free = pool.filter(i => i !== motion && !recent.includes(i)), least = Math.min(...free.map(used));
+    const heavy = plan.length && plan[plan.length - 1].look !== motion && r() < 0.8;
+    const look = heavy ? motion : pickR(r, free.filter(i => used(i) <= least + 1));   // the least shown go first
+    plan.push({ t, look, sub: Math.floor(r() * 1e6) });
+    next = t + (calmMode ? 12 + r() * 8 : look === motion ? 8 + r() * 6 : 5 + r() * 5);
   }
   Object.assign(mixPlan, { P, salt: songSalt, calm: calmMode, plan });
   return plan;
@@ -597,12 +612,27 @@ function setAccent(c) {
   if (c && c !== setAccent.last) document.documentElement.style.setProperty('--accent', setAccent.last = c);
 }
 
+// The countdown: time left, once a second. Hidden when nobody knows how long the song is.
+let leftShown = null;
+function stepLeft() {
+  const d = lastState.dur, el = $('#left'), on = !!d && !!track.title && (view === 'both' || view === 'stars');
+  if (on !== el.classList.contains('on')) el.classList.toggle('on', on);
+  if (!on) { leftShown = null; return; }
+  const rem = Math.max(0, Math.ceil(d - (songTime() - offset)));
+  if (rem === leftShown) return;
+  leftShown = rem;
+  el.textContent = `${String(Math.floor(rem / 60)).padStart(2, '0')}:${String(rem % 60).padStart(2, '0')}`;
+  el.classList.toggle('end', rem <= 60);
+  if (rem <= 60 && clock.playing && el.animate) el.animate([{ scale: 1.07 }, { scale: 1 }], { duration: 280, easing: 'ease-out' });
+}
+
 let lastTs = 0;
 function frame(ts) {
   requestAnimationFrame(frame);   // first: an error while drawing costs one frame, not the whole animation
   dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
   stepCalm();   // before the Mix plan: it picks the pool
   stepBeat();
+  stepLeft();
   lastHits = wordHits; wordHits = [];
   const lk = setLook(mixing() ? mixLook() : lookWant);   // also switches to/from Constellation when the window crosses phone width
   stepMouse(); stepNotch(lk);                                  // these keep real speed; the looks below get slowed dt
@@ -724,7 +754,8 @@ const SWATCH = { constellation: 'radial-gradient(circle at 60% 40%, #E8D44D 0 22
                  pop: 'conic-gradient(#CC1A4A 0 33%, #3FF0C3 0 66%, #EECB5B 0)',
                  ink: 'linear-gradient(135deg, #EEEBE3 50%, #1A1916 50%)',
                  space: 'radial-gradient(circle at 70% 30%, #F7A6C9 0 18%, #2A0E78 22%, #3A0A5A)',
-                 splash: 'conic-gradient(#2BFFC0 0 40%, #E8096E 0 70%, #3D0A91 0)' };
+                 splash: 'conic-gradient(#2BFFC0 0 40%, #E8096E 0 70%, #3D0A91 0)',
+                 motion: 'radial-gradient(circle, #fff 0 22%, #24245c 46%, #05051a)' };
 let lockNow = -1, colorNow = -1, pickedAt = -9, mediaAt = -9, lastState = {};
 function buildNotch() {
   $('#looks').innerHTML = '<div class="chip plain" data-i="-1">Mix</div>' + LOOKS.map((l, i) =>
@@ -892,6 +923,7 @@ addEventListener('keydown', e => {
 <script src="looks/ink.js"></script>
 <script src="looks/space.js"></script>
 <script src="looks/splash.js"></script>
+<script src="looks/motion.js"></script>
 <script>
 resize();
 buildNotch();
@@ -934,7 +966,7 @@ addEventListener('pointerdown', e => {   // a click below the notch sends a shoc
 // Start drawing once the fonts are in, so the first layouts are measured with the real lettering.
 Promise.race([
   Promise.all(['900 40px Archivo', 'italic 900 40px Archivo', '40px "League Gothic"', '40px "Alfa Slab One"',
-               '700 40px "Josefin Sans"', '100 40px "Josefin Sans"', '700 40px Caveat', '40px "Permanent Marker"'].map(f => document.fonts.load(f))),
+               '700 40px "Josefin Sans"', '100 40px "Josefin Sans"', '700 40px Caveat', '40px "Permanent Marker"', '900 40px Montserrat', '200 40px Montserrat'].map(f => document.fonts.load(f))),
   new Promise(r => setTimeout(r, 3000)),
 ]).then(() => requestAnimationFrame(frame));
 </script>
