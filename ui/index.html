@@ -167,6 +167,26 @@
 </div></div>
 <div id="cursor"></div>
 <script>
+// =====================================================================================================================
+// HOW THIS PAGE WORKS
+//
+// This page is the whole screen of the app. Python (lyric_constellation/window.py) shows it full screen and offers
+// functions the page can call as `api.state()`, `api.track()`, `api.seek(42)`... (see "talking to app.py" below).
+//
+//  1. Polling:  4 times a second the page asks api.state() for the song position, play/pause, which look, the mood
+//               and the beat. When the song changes it also asks api.track() for the title, cover and timed words.
+//  2. The clock: between polls, songTime() keeps counting on its own, so words move smoothly at any refresh rate.
+//  3. Drawing:  frame() runs once per screen refresh. It works out effects shared by every look (mouse, beat pulse,
+//               clicks), then calls the current look's frame(T), which draws the words onto one big <canvas>.
+//  4. Looks:    each file in ui/looks/ adds one look to LOOKS with LOOKS.push({ id, name, build, frame, ... }).
+//               build() lays a lyric line out once; frame(T) draws it every frame. Songs take turns, in the order
+//               of the <script> lines at the bottom of this file.
+//  5. The notch: the black pill at the top. Hover it to pick a look, color, mood, screens, seek and volume.
+//
+// Sections below, in order: shared helpers · smooth timing · glow sprites · the mouse · the look manager
+// (countdown, cover bars, frame) · talking to app.py · the notch · keys (at the bottom, with the start-up code).
+// =====================================================================================================================
+
 // ---------- shared by every look ----------
 const LOOKS = [];      // each ui/looks/*.js file adds one entry; the app shows one look per song, in order
 const WIN = +new URLSearchParams(location.search).get('win') || 0;   // 0 = main window, others = further monitors
@@ -961,6 +981,7 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('on'), 1200);
 }
 
+// ---------- keys (the table in README.md lists them) ----------
 addEventListener('keydown', e => {
   if (e.key === 'F12' || e.key === 'F11' || (e.key === 'Escape' && fs)) {
     e.preventDefault(); fs = !fs; api.fullscreen(WIN); return;
@@ -988,6 +1009,7 @@ addEventListener('keydown', e => {
 <script src="looks/splash.js"></script>
 <script src="looks/motion.js"></script>
 <script>
+// ---------- start-up: runs once, after every look file above has added itself to LOOKS ----------
 resize();
 buildNotch();
 buildSeek();
