@@ -9,7 +9,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "0.9.2"
+__version__ = "1.0.0"
 
 # ROOT: the folder with the app's own read-only files (ui/, songs.txt).
 # When running from source it is the project folder. When running as the built .exe, PyInstaller unpacks
