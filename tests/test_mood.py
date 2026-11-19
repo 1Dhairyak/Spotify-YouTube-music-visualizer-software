@@ -57,13 +57,13 @@ def test_fusion_starts_on_lyrics_and_trusts_the_sound_once_heard():
 
 def test_player_keeps_one_mood_per_song():
     p = Player()
-    p.tid = 1
+    p.track_id = 1
     p.publish("Song", "Artist", None, [], "Finding lyrics…")
     first = p.mood
     first.add(dict.fromkeys(mood.AUDIO_FEATURES, 0.1), 10)
     p.publish("Song", "Artist", None, [], "", {"lrc": SAD})   # lyrics arrive later: same song, sound kept
-    assert p.mood is first and first.heard == 10 and first.zl is not None
-    p.tid = 2
+    assert p.mood is first and first.heard == 10 and first.lyrics_score is not None
+    p.track_id = 2
     p.publish("Other", "Artist", None, [], "")
     assert p.mood is not first and p.mood.heard == 0 and p.mood.value() is None
 
@@ -75,7 +75,7 @@ def test_calm_or_lively_lasts_for_one_song(tmp_path, monkeypatch):
     assert api.state()["mood"] == "auto"
     api.set_mood("calm")   # no song yet: nothing to apply it to
     assert api.state()["mood"] == "auto"
-    p.tid = 1
+    p.track_id = 1
     p.publish("Song", "Artist", None, [], "")
     api.set_mood("calm")
     assert api.state()["mood"] == "calm"
@@ -83,6 +83,6 @@ def test_calm_or_lively_lasts_for_one_song(tmp_path, monkeypatch):
     assert api.state()["mood"] == "calm"
     api.set_mood("nonsense")
     assert api.state()["mood"] == "calm"
-    p.tid = 2
+    p.track_id = 2
     p.publish("Other", "Artist", None, [], "")
     assert api.state()["mood"] == "auto"

@@ -1,5 +1,6 @@
 """Choosing monitors: which windows exist, what each shows, with 1, 2 and 3 monitors plugged in."""
-import sys, types
+import sys
+import types
 
 import pytest
 
@@ -147,7 +148,7 @@ def test_the_countdown_knows_the_length_from_the_player_or_the_lyrics(setup):
     api, _, _ = setup(mon(0))
     assert api.state()["dur"] is None                           # unknown: the UI hides the countdown
     p = api._player
-    p.tid = 1
+    p.track_id = 1
     p.publish("Song", "Artist", None, [], "", {"lrc": "[00:01.00]hi", "duration": 200})
     assert api.state()["dur"] == 200                            # identified by sound: LRCLIB knows the length
     p.dur = 215.5
