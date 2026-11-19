@@ -90,6 +90,7 @@ class Player:
         self.last_heard = -999.0
         self.mood = None  # SongMood of the track shown: how emotional it is (MoodListener adds what it hears)
         self.beat = None  # the latest tempo and beat of what's playing (beat.py)
+        self.levels = None  # the latest band levels (audio.Levels), for the bars around the cover
         self.session, self.dur, self.can_seek = None, None, False  # the player we follow, for seeking
         self.loop, self.seeking_until = None, 0.0
 

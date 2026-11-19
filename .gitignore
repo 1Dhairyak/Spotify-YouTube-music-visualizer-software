@@ -12,3 +12,5 @@ build/
 dist/
 # mood-model training: lyrics fetched while measuring songs
 tools/.cache/
+# launch video and its render scripts (made with /brag)
+brag-output/

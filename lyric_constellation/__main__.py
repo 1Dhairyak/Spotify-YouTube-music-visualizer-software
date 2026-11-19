@@ -9,7 +9,7 @@
 import asyncio, logging, logging.handlers, os, sys, threading, warnings
 
 from . import DATA, ROOT, __version__, migrate_old_data
-from .audio import Speakers
+from .audio import Levels, Speakers
 from .beat import BeatListener
 from .learner import Learner
 from .lyrics import clean, cover_url, fetch_lyrics, words_for
@@ -85,6 +85,7 @@ def listen_and_watch(player):
     Learner(player).start(speakers)
     MoodListener(player).start(speakers)
     speakers.listen(1, BeatListener(player).hear)
+    speakers.listen(0.1, Levels(player).hear)
     threading.Thread(target=speakers.run, daemon=True).start()
     run_watch(player)
 

@@ -24,17 +24,18 @@
   #nc { bottom: auto; height: 400px; pointer-events: none; }   /* the notch's black shape (drawNotch); NC_H in the script */
   header { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 20px;
     padding: 32px 40px; transition: opacity .5s; z-index: 1; }
+  header:not(.narrow *) { padding: 46px 46px 32px; gap: 42px; }   /* room for the bars around the cover (stepBars) */
   header.hidden { opacity: 0; }
   #art { width: 88px; height: 88px; border-radius: 14px; object-fit: cover; box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 22%, transparent); }
   /* The title block stays left of the open notch (and so inside the border light's dip): long titles wrap to a
-     compact block of at most 2 lines instead of running under the notch. 172px = padding + art + gap + margin. */
-  header > div { min-width: 0; max-width: calc((100vw - var(--open-w, 780px)) / 2 - 172px); }
+     compact block of at most 2 lines instead of running under the notch. 200px = padding + art + gap + margin. */
+  header > div { min-width: 0; max-width: calc((100vw - var(--open-w, 780px)) / 2 - 200px); }
   #title, #artist { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   #title { font-size: 26px; font-weight: 600; line-height: 1.2; -webkit-line-clamp: 2; }
   #artist { -webkit-line-clamp: 1; }
   /* Narrow window (phone-sized): no room beside the open notch, so the header sits just below the closed notch,
      a bit smaller, and fades out while the notch is open instead of being covered by it */
-  .narrow header { padding: 46px 24px 0; gap: 14px; }
+  .narrow header { padding: 46px 24px 0; gap: 26px; }
   .narrow.notch-open header { opacity: 0; }
   .narrow header > div { max-width: none; }
   .narrow #art { width: 64px; height: 64px; border-radius: 12px; }
@@ -53,7 +54,7 @@
   #cover { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 3vh; opacity: 0; transform: scale(.96); transition: opacity .8s, transform .8s; pointer-events: none; }
   .view-cover #cover { opacity: 1; transform: none; }
-  #cover img { height: 52vh; aspect-ratio: 1; border-radius: 28px; object-fit: cover;
+  #cover img { height: 40vh; aspect-ratio: 1; border-radius: 28px; object-fit: cover; margin: 30px 0 132px;   /* room for the bars */
     box-shadow: 0 0 80px color-mix(in srgb, var(--accent) 30%, transparent); }
   #cover .t { font-size: clamp(28px, 3.6vw, 64px); font-weight: 600; text-align: center; padding: 0 5vw; }
   #cover .a { font-size: clamp(16px, 1.6vw, 28px); opacity: .6; margin-top: -1.5vh; }
@@ -626,6 +627,67 @@ function stepLeft() {
   if (rem <= 60 && clock.playing && el.animate) el.animate([{ scale: 1.07 }, { scale: 1 }], { duration: 280, easing: 'ease-out' });
 }
 
+// The bars around the cover: on the cover screen around the big cover, on a single screen around the small one at the
+// top left. They follow 24 bands of what the speakers play (audio.Levels): bass in the middle of each side, treble
+// toward the corners. Levels come every 50 ms, in pairs every 0.1 s, so they're played back one at a time.
+const BARS = 24, barGot = [], barWant = new Float32Array(BARS), barShown = new Float32Array(BARS);
+let barN = -1, barAt = 0, barBusy = false, barRects = null, barRectsAt = -9;
+function barsWanted() { return !!(api && api.levels) && (view === 'cover' || view === 'both') && !!track.art; }
+setInterval(() => {
+  if (barBusy || !barsWanted() || !clock.playing) return;
+  barBusy = true;
+  api.levels().then(l => {
+    if (l && l.n !== barN) { barN = l.n; barGot.push(...l.bands); barGot.splice(0, barGot.length - 4); }
+  }).catch(() => {}).finally(() => { barBusy = false; });
+}, 50);
+function barRect(el) {
+  const r = el.getBoundingClientRect();
+  return r.width > 8 && getComputedStyle(el).display !== 'none' ? { x: r.left, y: r.top, w: r.width, h: r.height, rad: parseFloat(getComputedStyle(el).borderRadius) || 0 } : null;
+}
+function stepBars() {
+  if (barGot.length && now() - barAt >= 0.045) { barWant.set(barGot.shift()); barAt = now(); }
+  if (!clock.playing) barWant.fill(0);
+  for (let i = 0; i < BARS; i++) {   // up fast, down slowly, like a meter
+    const w = barWant[i], v = barShown[i];
+    barShown[i] = v + (w - v) * ease(w > v ? 0.55 : 0.13);
+  }
+  if (!barsWanted()) return;
+  if (now() - barRectsAt > 0.4) {   // where the covers are; cheap to ask, but not every frame
+    barRectsAt = now();
+    const hd = $('header');
+    barRects = { cover: view === 'cover' ? barRect($('#cover img')) : null,
+                 art: view === 'both' && !hd.classList.contains('hidden') ? barRect($('#art')) : null,
+                 artA: +getComputedStyle(hd).opacity, narrow: document.documentElement.classList.contains('narrow') };
+  }
+  const calm = 1 - 0.4 * calmFx;
+  if (barRects.cover) drawBars(barRects.cover, { gap: 13, w: 4.5, len: 110 * calm, pad: 14, a: 1 - sceneFade });
+  if (barRects.art) drawBars(barRects.art, { gap: 7, w: 2.5, len: (barRects.narrow ? 15 : 30) * calm, pad: 7, a: barRects.artA });
+}
+function drawBars(r, o) {
+  if (o.a < 0.02) return;
+  const lvl = u => {   // u: 0..1 along a side -> that spot's level (bass at the middle)
+    const f = Math.abs(u - 0.5) * 2 * (BARS - 1), i = Math.min(BARS - 2, Math.floor(f));
+    return barShown[i] + (barShown[i + 1] - barShown[i]) * (f - i);
+  };
+  ctx.save(); ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);
+  ctx.beginPath();
+  const side = (x0, y0, dx, dy, nx, ny, len) => {   // one side: starting corner, its direction, the outward normal
+    const inner = len - 2 * r.rad, n = Math.max(2, Math.floor(inner / o.gap));
+    for (let k = 0; k <= n; k++) {
+      const u = k / n, at = r.rad + u * inner, x = x0 + dx * at + nx * o.pad, y = y0 + dy * at + ny * o.pad, l = 1.5 + o.len * lvl(u);
+      ctx.moveTo(x, y); ctx.lineTo(x + nx * l, y + ny * l);
+    }
+  };
+  side(r.x, r.y, 1, 0, 0, -1, r.w);              // top
+  side(r.x, r.y + r.h, 1, 0, 0, 1, r.w);         // bottom
+  side(r.x, r.y, 0, 1, -1, 0, r.h);              // left
+  side(r.x + r.w, r.y, 0, 1, 1, 0, r.h);         // right
+  ctx.strokeStyle = setAccent.last || '#fff';   // plain blending and square glow ends: round caps and 'lighter' cost 5x more
+  ctx.globalAlpha = 0.22 * o.a; ctx.lineWidth = o.w * 3; ctx.lineCap = 'butt'; ctx.stroke();    // the glow
+  ctx.globalAlpha = 0.9 * o.a; ctx.lineWidth = o.w; ctx.lineCap = 'round'; ctx.stroke();        // the bar
+  ctx.restore();
+}
+
 let lastTs = 0;
 function frame(ts) {
   requestAnimationFrame(frame);   // first: an error while drawing costs one frame, not the whole animation
@@ -679,6 +741,7 @@ function frame(ts) {
     }
     if (bursts.length) { ctx.save(); drawBursts(); ctx.restore(); }
   }
+  stepBars();
   const fade = 0.8 + calmFx;   // calm: slower crossfades
   if (now() - ghostAt < fade) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -834,7 +897,7 @@ function measureNotch() {   // the open panel's size: measured only when its con
   document.documentElement.style.setProperty('--open-w', notch.openW + 'px');   // the notch and the header both use it
   notch.openH = Math.ceil($('#notch .in').offsetHeight);
   // under ~160px left for the title beside the open notch: put the header below it instead
-  document.documentElement.classList.toggle('narrow', (innerWidth - notch.openW) / 2 - 172 < 160);
+  document.documentElement.classList.toggle('narrow', (innerWidth - notch.openW) / 2 - 200 < 160);
 }
 addEventListener('resize', measureNotch);
 function stepNotch(lk) {

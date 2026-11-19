@@ -100,6 +100,10 @@ class Api:
     def seek(self, sec):
         self._player.seek(sec)
 
+    def levels(self):
+        """Polled every 50 ms while bars are on screen: {"n": block number, "bands": two frames of 0..1 levels}."""
+        return self._player.levels
+
     def volume(self, change):
         """Windows' own volume, up or down a step; its popup shows the level."""
         self._media_key(0xAF if change > 0 else 0xAE)
