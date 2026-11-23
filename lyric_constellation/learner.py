@@ -1,5 +1,19 @@
-"""Learns real word times by listening: loopback audio -> Whisper -> aligned to the lyrics -> saved in the cache."""
-import logging, queue, threading
+"""Learns the real moment each word is sung, by listening.
+
+The lyrics site (LRCLIB) only tells us when each LINE starts, not each word, so at first the app guesses
+the word times. While an English song plays, this file:
+ 1. collects ~30 seconds of what the speakers play,
+ 2. gives it to Whisper (a speech-recognition model, run on the CPU by the faster-whisper library),
+    which writes down the words it hears and when,
+ 3. matches those words against the lyrics (lyrics.match_heard),
+ 4. saves the matched times in the lyrics cache file.
+The next time the song plays (or the chorus comes round again), the words follow the singing exactly.
+
+faster-whisper is optional: without it, nothing here runs and the word times stay estimated.
+"""
+import logging
+import queue
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -12,73 +26,100 @@ log = logging.getLogger(__name__)
 
 
 class Learner:
-    """LRCLIB times lines, not words. While a song with lyrics plays, this records what the speakers play; every
-    ~30 s Whisper (faster-whisper, optional) writes down the words it hears, and those that match the lyrics are
-    saved into the lyrics cache with their real times. Replays, and choruses later in the same play, then follow
-    the singing word for word. English only: Whisper's small.en model, about 5x faster than real time on the CPU."""
-    BLOCK, CHUNK = 0.5, 30
+    """Records stretches of a song and has Whisper (small.en model, ~5x faster than real time) find its word times."""
+
+    BLOCK = 0.5   # seconds of sound per piece we get from Speakers
+    CHUNK = 30    # seconds of sound per Whisper job
 
     def __init__(self, player):
-        self.player, self.jobs = player, queue.Queue(maxsize=3)
-        self.buf, self.t0, self.ly = [], 0.0, None
+        self.player = player
+        self.jobs = queue.Queue(maxsize=3)   # recordings waiting for Whisper (at most 3, so memory stays small)
+        self.buf = []                        # the pieces of the recording in progress
+        self.buffer_start = 0.0              # the song time (seconds) where that recording starts
+        self.lyrics = None                   # the lyrics of the song being recorded
 
     def start(self, speakers):
+        """Start listening, but only if faster-whisper is installed."""
         try:
             import faster_whisper  # noqa: F401
         except ImportError:
             log.info("faster-whisper is not installed: words inside a line stay estimated")
             return
         speakers.listen(self.BLOCK, self.hear)
-        threading.Thread(target=self.work, daemon=True).start()
+        threading.Thread(target=self.work, daemon=True).start()   # Whisper is slow: it gets its own thread
 
     def wanted(self):
-        """The lyrics worth listening for right now, or None."""
-        p, ly = self.player, self.player.lyrics
-        if p.playing and p.timed and ly and ly.get("file") and ly["lrc"].isascii() and not WORD_TAG.search(ly["lrc"]):
-            return ly
-        return None
+        """The lyrics worth listening for right now, or None.
+        Only when: the music plays, we know the exact position, the lyrics are cached, they are English
+        (plain ASCII letters), and they don't already come with word times."""
+        p = self.player
+        lyrics = p.lyrics
+        if not (p.playing and p.timed and lyrics and lyrics.get("file")):
+            return None
+        if not lyrics["lrc"].isascii() or WORD_TAG.search(lyrics["lrc"]):
+            return None
+        return lyrics
 
     def hear(self, block):
-        now, cur = self.player.now(), self.wanted()  # song time at the end of this block
+        """Called with every half second of sound. Adds it to the recording, and sends the recording to Whisper
+        when it is full, or when it must stop (pause, jump in the song, or a new song)."""
+        now = self.player.now()   # song time at the end of this block
+        current = self.wanted()
         buf = self.buf
-        joined = bool(buf) and cur is self.ly and abs(now - (self.t0 + (len(buf) + 1) * self.BLOCK)) < 0.3
-        if buf and (not joined or len(buf) * self.BLOCK >= self.CHUNK):  # paused, seeked, new song or full
-            if len(buf) * self.BLOCK >= 8:
+
+        # Does this block carry straight on from the recording we have? (same song, and no jump in time)
+        expected_now = self.buffer_start + (len(buf) + 1) * self.BLOCK
+        continues = bool(buf) and current is self.lyrics and abs(now - expected_now) < 0.3
+        is_full = len(buf) * self.BLOCK >= self.CHUNK
+
+        if buf and (not continues or is_full):
+            if len(buf) * self.BLOCK >= 8:   # under 8 s is too short for Whisper to be useful
+                audio = np.concatenate(buf).astype("float32")
                 try:
-                    self.jobs.put_nowait((self.ly, self.t0, np.concatenate(buf).astype("float32")))
-                except queue.Full:  # Whisper is behind: skip this stretch, the next play fills it in
+                    self.jobs.put_nowait((self.lyrics, self.buffer_start, audio))
+                except queue.Full:   # Whisper is behind: skip this stretch, a later play will fill it in
                     pass
-            keep = buf[-4:] if joined else []  # 2 s overlap, so a word cut in half isn't lost
-            self.t0, self.buf = self.t0 + (len(buf) - len(keep)) * self.BLOCK, keep
-        if cur:
-            if not self.buf:
-                self.t0, self.ly = now - self.BLOCK, cur
+            # Keep the last 2 s when carrying on, so a word cut in half at the edge is heard whole next time.
+            keep = buf[-4:] if continues else []
+            self.buffer_start = self.buffer_start + (len(buf) - len(keep)) * self.BLOCK
+            self.buf = keep
+
+        if current:
+            if not self.buf:   # a new recording starts with this block
+                self.buffer_start = now - self.BLOCK
+                self.lyrics = current
             self.buf.append(block)
 
     def work(self):
+        """The Whisper thread: takes recordings from the queue, one at a time, forever."""
         from faster_whisper import WhisperModel
+
         model = None
         while True:
-            ly, t0, audio = self.jobs.get()
+            lyrics, start, audio = self.jobs.get()
             try:
-                if model is None:  # loaded on first use; the very first run downloads it (~480 MB)
+                if model is None:   # loaded on first use; the very first time it downloads (~480 MB)
                     model = WhisperModel("small.en", device="cpu", compute_type="int8", cpu_threads=4)
-                segs, _ = model.transcribe(audio, language="en", word_timestamps=True, vad_filter=False,
-                                           condition_on_previous_text=False)
-                heard = [(t0 + w.start, w.word) for s in segs for w in s.words]
-                got = match_heard(parse_lrc(ly["lrc"]), heard, t0, t0 + len(audio) / RATE)
+                segments, _ = model.transcribe(audio, language="en", word_timestamps=True, vad_filter=False,
+                                               condition_on_previous_text=False)
+                # Each heard word with its time in the song (Whisper's times count from the recording's start).
+                heard = [(start + word.start, word.word) for segment in segments for word in segment.words]
+                end = start + len(audio) / RATE
+                got = match_heard(parse_lrc(lyrics["lrc"]), heard, start, end)
                 if got:
-                    self.save(ly, got)
+                    self.save(lyrics, got)
             except Exception:
                 log.exception("learner")
 
-    def save(self, ly, got):
-        learned = ly.setdefault("learned", {})
-        learned.update({str(i): t for i, t in got.items()})
-        f = Path(ly["file"])
+    def save(self, lyrics, got):
+        """Add the newly learned word times to the song's cache file, and update the screen if it's still playing."""
+        learned = lyrics.setdefault("learned", {})
+        learned.update({str(index): seconds for index, seconds in got.items()})   # JSON keys must be text
+
+        f = Path(lyrics["file"])
         data = read_json(f, {})
         write_json(f, {**data, "learned": learned})
-        log.info("learned %d word times for %s - %s (%d so far)", len(got), ly["artist"], ly["title"], len(learned))
-        if self.player.lyrics is ly:
-            self.player.retime(words_for(ly))
+        log.info("learned %d word times for %s - %s (%d so far)", len(got), lyrics["artist"], lyrics["title"], len(learned))
 
+        if self.player.lyrics is lyrics:
+            self.player.retime(words_for(lyrics))

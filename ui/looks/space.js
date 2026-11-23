@@ -1,4 +1,4 @@
-// Look 6: Deep Space (from the "Don't Let Me Down" motion-graphic lyric video).
+// Look 5: Deep Space (from the "Don't Let Me Down" motion-graphic lyric video).
 // An indigo-to-violet sky with green and red glows, a three-depth starfield, a ringed planet, a moon and a passing
 // comet (drawn here, not from the video). Lines mix thin and bold Josefin caps: stacks that drop in word by word and
 // slowly zoom, letter-spaced lines that squeeze together, staircases that slide in, and warp streaks at every line.

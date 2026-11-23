@@ -1,2 +1,4 @@
 # shell script: must keep LF to run on Linux/macOS
 android/gradlew text eol=lf
+# Windows batch files: must keep CRLF or cmd.exe can misread labels
+*.bat text eol=crlf

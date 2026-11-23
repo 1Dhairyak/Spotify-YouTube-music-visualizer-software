@@ -9,7 +9,11 @@ song's 30 s iTunes preview, which ffmpeg streams straight into memory, so no aud
 measurements are kept, in tools/mood_features.json: the set of words a song uses, its lyric density and its
 8 sound features. train needs only that file and numpy.
 """
-import json, re, subprocess, sys, time
+import json
+import re
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import numpy as np

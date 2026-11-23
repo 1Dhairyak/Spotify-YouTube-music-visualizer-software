@@ -3,8 +3,7 @@ line-length = 130
 extend-exclude = ["ui"]
 
 [tool.ruff.lint]
-select = ["E9", "F"]
-ignore = ["E401"]
+select = ["E9", "E401", "F"]   # E401: one import per line, easier to read
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

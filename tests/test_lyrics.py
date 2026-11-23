@@ -63,3 +63,11 @@ def test_learned_word_times():
     assert [x["t"] for x in w[:5]] == [10.0, 11.1, 11.4, 11.9, 12.5] and 12.5 < w[5]["t"] < w[6]["t"] < 14
     assert [round(x["t"] - 20, 2) for x in w[10:15]] == [0, 1.1, 1.4, 1.9, 2.5]  # the chorus repeat, from 20 s
     assert words_for({"lrc": lrc})[1]["t"] < 11  # nothing learned: the guess
+
+
+def test_sync_report_measures_guess_against_heard():
+    from tools.sync_report import errors
+    song = {"lrc": "[00:10.00]hello there\n[00:20.00]bye", "learned": {"1": 11.0}}
+    guess = word_times(parse_lrc(song["lrc"]))[1]["t"]
+    assert errors(song) == [pytest.approx(abs(guess - 11.0))]
+    assert errors({"lrc": song["lrc"]}) == []   # nothing learned yet

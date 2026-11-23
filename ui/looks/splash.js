@@ -1,4 +1,4 @@
-// Look 7: Splash (from the "Hand-Drawn Motion Typography" lyric video).
+// Look 6: Splash (from the "Hand-Drawn Motion Typography" lyric video).
 // Flat mint / indigo / magenta / night grounds that change with a brush swipe or a liquid flood, hand-lettered caps
 // that boil (redrawn with a new wobble 8 times a second), small lead-in words with sparkle ticks over a huge
 // dry-brush word, words written round a circle about a splat, words tumbling down stairs, and ink blobs that fly

@@ -1,89 +1,144 @@
 # Lyric Constellation
 
+**Turns whatever you play on Spotify, YouTube Music or YouTube into full-screen, time-synced animated lyrics.**
+Every word lights up the moment it's sung, in one of 7 animated styles. No login, no API keys: it reads the song
+from Windows itself.
+
+![Lyric Constellation switching between the Pink Poster, Pop Colors and Ink Sketch looks](docs/demo.gif)
+
 <p>
   <a href="https://github.com/1Dhairyak/Spotify-YouTube-music-visualizer-software/releases/latest/download/LyricConstellation-Windows.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" height="40"></a>
   &nbsp;
   <a href="https://github.com/1Dhairyak/Spotify-YouTube-music-visualizer-software/releases/latest/download/LyricConstellation-Android.apk"><img alt="Download for Android" src="https://img.shields.io/badge/Download-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" height="40"></a>
 </p>
 
-**Windows:** unzip, then run `LyricConstellation.exe` (Windows 10/11; if SmartScreen warns about an unknown app, choose *More info → Run anyway*).
-**Android 8+:** open the `.apk` on your phone to install it (allow installing from your browser or files app when asked), then allow
-the *microphone*: play a song out loud nearby and the app recognizes it (like Shazam) within about 10 seconds, then
-listens again every 20 seconds to stay in time and notice a new song or a pause. It only listens while it is open on
-screen. The Android app has the Constellation look with its color picker; the Windows app has all 6 looks.
+## Install (Windows 10 / 11)
 
-A lightweight Windows app that turns whatever you're playing on Spotify, YouTube Music or YouTube into time-synced kinetic-typography lyrics. It runs full screen on the monitors you choose.
+1. Click **Download for Windows** above and unzip `LyricConstellation-Windows.zip` anywhere (Desktop is fine).
+2. Open the folder and double-click **`LyricConstellation.exe`**.
+   Windows may say *"Windows protected your PC"* because the app isn't signed: click **More info → Run anyway**.
+3. Play a song in Spotify, YouTube Music or YouTube. The lyrics appear within a second or two.
 
-Each song gets the next of 6 looks, in turn (or pick **Mix** in the notch to switch every few lines):
+Nothing else to install: Python and everything the app needs are inside the folder. It uses the Microsoft Edge
+WebView2 engine, which Windows 11 and up-to-date Windows 10 already have (if the window stays blank, install the
+free [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)). To uninstall, delete the folder
+and `%APPDATA%\LyricConstellation`.
+
+**Android 8+:** open the `.apk` on your phone to install it, then allow the *microphone*: play a song out loud nearby
+and the app recognizes it (like Shazam), then keeps listening every 20 seconds to stay in time. The Android app has
+the Constellation look; the Windows app has all 7.
+
+## Features
+
+- **Works with any player.** Reads the song from Windows' media controls (the title in the volume popup), so
+  Spotify, YouTube Music and YouTube in any browser all work. If a player reports nothing, it **recognizes the song
+  by sound** (Shazam).
+- **Synced lyrics** from [LRCLIB](https://lrclib.net), cached so each song is downloaded once.
+- **Learns word timing by listening.** Lyrics sites only time each *line*. While an English song plays, Whisper
+  (speech recognition, runs offline on the CPU) hears which word is sung when and saves it, so replays follow the
+  singing word for word. Across 32 songs (4,152 words) the first guess was off by a median of 205 ms; listening
+  fixes that (measure it yourself: `python tools/sync_report.py`).
+- **Knows an emotional song when it hears one.** A small model I trained on 264 labelled songs reads the lyrics
+  (English and romanized Hindi/Punjabi) and listens to the music (brightness, drums, beat, swells). Ballads get a
+  calm mode: muted colors, slower motion. 93% accurate in cross-validation.
+- **Moves with the music:** pulses on the beat, sound-level bars around the album cover, a countdown of the time left.
+- **Interactive:** words near the mouse are pushed aside and magnified; click a word to burst it into sparks.
+- **Multi-monitor:** lyrics on one screen and the cover on another, chosen with one click.
+- **Smooth** at your screen's refresh rate (60, 144, 180 Hz).
+
+### The 7 looks
+
+Each song gets the next look in turn, or pick one (or **Mix**) in the notch at the top of the screen.
 
 | Look | Style |
 |---|---|
-| Constellation | Glowing stars and lines that flare as each word is sung; 7 sub-styles every 30 s (Spiral included), 15 colors every 20 s, a light circling the screen edge that speeds up for fast verses (rap) and drifts through slow ones |
-| Pink Poster | Morphing pink gradients, extra-wide outlined type that fills in, echo rows, a lettered sphere, shattering glass, words split in two 3D halves, a framed card with the line running round it |
-| Pop Colors | Flat bold colors with wipes, justified blocks of mixed fonts, hatched 3D shadows, ring text, handwriting with splats, tumbling 3D slab words, small lead-ins over a giant word |
-| Ink Sketch | Paper and blackboard with ink floods, brush caps, hand-drawn bubbles, signboard, bulbs, footsteps, a glass that fills as the line is sung, a speech balloon |
-| Deep Space | Indigo sky with stars, a ringed planet and comets; thin and bold caps that drop, squeeze and slide in; warp streaks; flat color cut-ins with speed lines and a one-word band; RGB-split exits |
-| Splash | Flat mint, indigo and magenta with brush-swipe and flood changes, boiling hand lettering, giant dry-brush words, words round a circle, word stairs and flying ink blobs |
+| Constellation | Glowing stars and lines that flare as each word is sung; 7 sub-styles, 15 colors, a light circling the screen edge |
+| Pink Poster | Morphing pink gradients, wide outlined type that fills in, a lettered sphere, shattering glass |
+| Pop Colors | Flat bold colors with wipes, mixed fonts, hatched 3D shadows, ring text, tumbling 3D words |
+| Ink Sketch | Paper and blackboard, brush lettering, hand-drawn bubbles, a glass that fills as the line is sung |
+| Deep Space | Indigo sky with stars, a ringed planet and comets; thin and bold caps that drop and slide in |
+| Splash | Mint, indigo and magenta with brush swipes, boiling hand lettering and flying ink blobs |
+| Motion | White type on black, 39 text effects (bounce, neon, mirror, slice, drip, handwriting...) |
 
-- **No login.** It reads the song from Windows' media controls (the title in the volume popup).
-- **Synced lyrics** from [LRCLIB](https://lrclib.net), cached locally in `%APPDATA%\LyricConstellation` (with settings and the log).
-- **Learns word timing by listening.** LRCLIB times lines, not words. While an English song plays, Whisper
-  (`faster-whisper`, small.en, ~480 MB downloaded on first use) hears which word is sung when and saves it, so
-  replays and repeated choruses follow the singing word for word. Without `faster-whisper` installed, words inside a line are estimated.
-- **Recognize by sound** (Shazam) when a player doesn't report the song.
-- **Knows an emotional song when it hears one.** A small trained model reads the lyrics' words (English and romanized
-  Hindi/Punjabi) and how densely they're sung, then listens to the music itself: brightness, percussion, beat and
-  swells, which works in any language. Ballads get calm mode; the log shows each decision (`mood: … -> calm 0.82`).
-- **Sharp album art** from the iTunes catalogue.
+## How to use it
 
-## Run from source
-
-Requirements: Windows 10/11 and Python 3.10+.
-
-```bash
-pip install -r requirements.txt
-python app.py              # live
-python app.py --demo 15    # demo with the first song in songs.txt, starting at 0:15
-```
-
-Double-click `hotkey.pyw` to make **Ctrl+Alt+Z** open or close the app from anywhere.
-
-**The notch:** hover the black pill at the top center of the screen to pick one look or **Mix** (looks take turns every 5-10 s, each with a random variant, in a new order every play), and Constellation's color (or **Cycle**). Switches crossfade; the choice is remembered. On emotional songs the app goes calm: muted colors, slower motion, gentler pops, and Mix sticks to the quiet looks for 12-20 s each; **Auto · Calm · Lively** in the notch lets it decide or forces one for the song playing; the next song starts on Auto. The notch also has a seek bar (when the player allows jumping) and Windows volume buttons, one small TV button per screen at its top right (lit = the app shows there, tap to switch; it starts on one and remembers your choice), and Constellation can take its color from the **album cover**. It slides away after 5 s without the mouse moving, once the edge light has gone round it.
-
-**The mouse:** every look reacts to it. Words and stars near the cursor are pushed aside and magnified, then spring back; the scene leans with it; the edge light bends toward it, ripples when you sweep past and races to meet it. **Click** a word to burst it into sparks and make it pop again, or anywhere else to send a shockwave that knocks the lyrics outward. Every word pops as it's sung, the scene kicks in on each line and pulses softly on the beat of the music. Drawing keeps pace with the screen's refresh rate (180 Hz included).
-
-## Keys
+**The notch:** move the mouse to the black pill at the top center. It holds: play/pause, previous/next, volume,
+the seek bar, the looks (or **Mix**), Constellation's color (or **Cycle** or the **album cover's** color),
+**Auto · Calm · Lively**, and one button per monitor. Your choices are remembered.
 
 | Key | Does |
 |---|---|
 | Space | Play / pause the music |
-| F12 / F11, Esc | Toggle full screen / leave it |
-| N | Next look; in Mix, reshuffle the order |
-| T, 1–7 | In Constellation: next sub-style / pick one (they also rotate every 30 s) |
+| F11 / F12, Esc | Full screen on / off |
+| N | Next look (in Mix: reshuffle) |
+| T, 1–7 | Constellation: next sub-style / pick one |
+| E, Shift+E | Motion: next / previous effect |
 | D / S | All screens or one / swap what each screen shows |
-| ← / →, 0 | Shift lyric timing / reset |
+| ← / →, 0 | Shift lyric timing earlier / later, reset |
 
-Other commands: `--preload` (cache lyrics for `songs.txt`), `--probe` (show what Windows reports), `--version`.
+**Ctrl+Alt+Z from anywhere** (when running from source): double-click `hotkey.pyw` once; the shortcut then opens
+or closes the app.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["Spotify / YouTube"] --> B["Windows media controls"]
+    B --> C["media.py: what's playing"]
+    C --> D["lyrics.py: LRCLIB lyrics + word timing"]
+    D --> E["Player (shared state)"]
+    C --> E
+    E --> F["ui/index.html: draws each word on time"]
+    S["audio.py: speaker sound"] --> G["Whisper word timing · mood · beat · level bars"]
+    G --> E
+```
+
+Python finds the song and its timed lyrics; a web page in a full-screen window (pywebview + Edge WebView2) draws
+them on an HTML canvas, asking Python for the song position 4 times a second and keeping its own clock in between.
+
+**Full walkthrough, file map and interview Q&A: [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md).**
+
+**Built with:** Python, pywebview, winrt (Windows media API), numpy (FFT audio analysis), faster-whisper,
+shazamio, HTML canvas + JavaScript, pytest, ruff, GitHub Actions, PyInstaller.
+
+## Run from source
+
+Needs Windows 10/11 and [Python 3.10+](https://www.python.org/downloads/) (tick *"Add python.exe to PATH"* when
+installing it).
+
+- **Easiest:** double-click `install.bat` once, then `run.bat` to start the app.
+- **Or in a terminal:**
+
+```powershell
+pip install -r requirements.txt
+python app.py              # live: follows what you play
+python app.py --demo 15    # demo with the first song in songs.txt, 15 seconds in (no music player needed)
+```
+
+Other options: `--preload` (download lyrics for every song in `songs.txt`), `--probe` (print what Windows reports
+about each player), `--version`. Settings, the lyrics cache and the log are in `%APPDATA%\LyricConstellation`.
 
 ## Develop
 
-```bash
+```powershell
 pip install -r requirements-dev.txt
-pytest        # lyrics parsing, word timing, title cleanup, cache
+pytest          # 41 tests: lyrics, word timing, title cleanup, cache, mood, listening, screens
 ruff check .
 ```
 
-Retrain the mood model: `python tools/train_mood.py fetch` measures the labeled songs in `tools/mood_songs.txt` and
-`tools/mood_heldout.txt` (lyrics from LRCLIB, sound streamed from iTunes previews by ffmpeg, nothing saved but the
-measurements), then `python tools/train_mood.py train` fits it, prints its test accuracy and writes
-`lyric_constellation/mood_model.json`.
+GitHub Actions runs both on every push.
 
-Build the downloads: `python -m PyInstaller LyricConstellation.spec` (Windows, into `dist/`) and
-`android/gradlew assembleRelease` (Android; the app is `ui/index.html` with only Constellation, plus `android/web/android.js`
-in place of the Python side, and a Java port of SongRec's Shazam fingerprinting in `Signature.java`).
+- **Release:** bump `__version__` in `lyric_constellation/__init__.py`, then `git tag v1.0.1` and `git push --tags`.
+  GitHub Actions builds the Windows zip and publishes the release (`.github/workflows/release.yml`).
+- **Build the Windows download by hand:** `python -m PyInstaller LyricConstellation.spec`, then zip
+  `dist/LyricConstellation` as `LyricConstellation-Windows.zip`.
+- **Retrain the mood model:** `python tools/train_mood.py fetch`, then `python tools/train_mood.py train`
+  (prints its accuracy and writes `lyric_constellation/mood_model.json`).
+- **Add or drop a look:** each look is one file in `ui/looks/` plus one `<script>` line in `ui/index.html`.
+- **Android:** `android/gradlew assembleRelease` (the app is `ui/index.html` with the Constellation look, plus
+  `android/web/android.js` in place of Python, and a Java port of SongRec's Shazam fingerprinting).
 
-The code lives in `lyric_constellation/` (`lyrics.py`, `media.py`, `learner.py`, `window.py`); `app.py` just starts it.
-MIT licensed, except the Android app in `android/`, which is GPL-3.0 (it ports SongRec's GPL code); see [NOTICE.md](NOTICE.md).
+## License
 
-Each look is one file in `ui/looks/`; delete the file and its `<script>` line in `ui/index.html` to drop it.
-Fonts in `ui/fonts/` are from Google Fonts under the SIL Open Font License (Permanent Marker: Apache 2.0); licence files are next to them.
+MIT, except the Android app in `android/`, which is GPL-3.0 (it ports SongRec's GPL code); see [NOTICE.md](NOTICE.md).
+Fonts in `ui/fonts/` are from Google Fonts under the SIL Open Font License (Permanent Marker: Apache 2.0).

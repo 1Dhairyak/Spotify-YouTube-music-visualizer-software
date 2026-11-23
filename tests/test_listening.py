@@ -1,5 +1,8 @@
 """The shared speaker recorder, the beat finder, the word learner fed by it, and seeking."""
-import asyncio, sys, threading, types
+import asyncio
+import sys
+import threading
+import types
 
 import numpy as np
 import pytest
@@ -81,7 +84,7 @@ def test_beat_stays_quiet_without_a_beat():
 
 def test_beat_listener_follows_the_song_and_pauses():
     p = Player()
-    p.tid, p.playing = 1, True
+    p.track_id, p.playing = 1, True
     L = beat.BeatListener(p)
     x, _ = clicks(120, secs=6)
     for i in range(6):
@@ -90,7 +93,7 @@ def test_beat_listener_follows_the_song_and_pauses():
     ui = beat.for_ui(p.beat)
     assert "at" not in ui and ui["ago"] >= -beat.LAG
     n = p.beat["n"]
-    p.tid = 2                              # a new song: the old beat is forgotten at once
+    p.track_id = 2                              # a new song: the old beat is forgotten at once
     L.hear(x[:RATE])
     assert p.beat is None and len(L.buf) == RATE
     p.playing = False
@@ -117,14 +120,14 @@ def test_learner_sends_whisper_chunks_of_what_it_hears():
 
 def test_mood_listener_measures_ten_second_windows():
     p = Player()
-    p.tid, p.playing = 1, True
+    p.track_id, p.playing = 1, True
     p.publish("Song", "Artist", None, [], "")
     L = MoodListener(p)
     t = np.arange(RATE * 2) / RATE
     tone = 0.3 * np.sin(2 * np.pi * 220 * t)
     for _ in range(6):                     # the first block only notices the new song
         L.hear(tone)
-    assert p.mood.heard == 10 and len(p.mood.ws) == 1
+    assert p.mood.heard == 10 and len(p.mood.sound_windows) == 1
 
 
 def test_seek_goes_to_the_player_and_stays_in_range():
@@ -151,3 +154,24 @@ def test_seek_goes_to_the_player_and_stays_in_range():
     th.join(2)
     assert sorted(asked) == [0, 425_000_000, 2_000_000_000]
     assert p.pos == 0.0 and p.seeking_until > 0
+
+
+def test_levels_follow_the_sound_not_the_volume():
+    p = Player()
+    p.playing = True
+    lv = audio.Levels(p)
+    t = np.arange(1600) / RATE
+    for _ in range(20):   # a bass note: the low bands fill up, the treble stays down
+        lv.hear((0.3 * np.sin(2 * np.pi * 80 * t)).astype(np.float32))
+    low, high = p.levels["bands"][1][:4], p.levels["bands"][1][-6:]
+    assert len(p.levels["bands"]) == 2 and len(p.levels["bands"][0]) == audio.BANDS
+    assert max(low) > 0.8 and max(high) < 0.2
+    quiet = (0.03 * np.sin(2 * np.pi * 80 * t)).astype(np.float32)   # 20 dB quieter: the bars dip...
+    lv.hear(quiet)
+    assert 0.2 < max(p.levels["bands"][1]) < 0.5
+    for _ in range(110):                                               # ...and fill again within about 10 s
+        lv.hear(quiet)
+    assert max(p.levels["bands"][1]) > 0.9
+    p.playing = False
+    lv.hear((0.3 * np.sin(2 * np.pi * 80 * t)).astype(np.float32))      # paused: flat
+    assert p.levels["bands"] == [[0.0] * audio.BANDS] * 2

@@ -13,6 +13,7 @@
   @font-face { font-family: 'Alfa Slab One'; src: url(fonts/alfa-slab-one.woff2) format('woff2'); }
   @font-face { font-family: 'Josefin Sans'; src: url(fonts/josefin-sans.woff2) format('woff2'); font-weight: 100 700; }
   @font-face { font-family: 'Caveat'; src: url(fonts/caveat.woff2) format('woff2'); font-weight: 400 700; }
+  @font-face { font-family: 'Montserrat'; src: url(fonts/montserrat.woff2) format('woff2'); font-weight: 100 900; }
   @font-face { font-family: 'Permanent Marker'; src: url(fonts/permanent-marker.woff2) format('woff2'); }
 
   :root { --accent: #e8d44d; --bg: #000; }
@@ -23,17 +24,18 @@
   #nc { bottom: auto; height: 400px; pointer-events: none; }   /* the notch's black shape (drawNotch); NC_H in the script */
   header { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 20px;
     padding: 32px 40px; transition: opacity .5s; z-index: 1; }
+  header:not(.narrow *) { padding: 46px 46px 32px; gap: 42px; }   /* room for the bars around the cover (stepBars) */
   header.hidden { opacity: 0; }
   #art { width: 88px; height: 88px; border-radius: 14px; object-fit: cover; box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 22%, transparent); }
   /* The title block stays left of the open notch (and so inside the border light's dip): long titles wrap to a
-     compact block of at most 2 lines instead of running under the notch. 172px = padding + art + gap + margin. */
-  header > div { min-width: 0; max-width: calc((100vw - var(--open-w, 780px)) / 2 - 172px); }
+     compact block of at most 2 lines instead of running under the notch. 200px = padding + art + gap + margin. */
+  header > div { min-width: 0; max-width: calc((100vw - var(--open-w, 780px)) / 2 - 200px); }
   #title, #artist { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
   #title { font-size: 26px; font-weight: 600; line-height: 1.2; -webkit-line-clamp: 2; }
   #artist { -webkit-line-clamp: 1; }
   /* Narrow window (phone-sized): no room beside the open notch, so the header sits just below the closed notch,
      a bit smaller, and fades out while the notch is open instead of being covered by it */
-  .narrow header { padding: 46px 24px 0; gap: 14px; }
+  .narrow header { padding: 46px 24px 0; gap: 26px; }
   .narrow.notch-open header { opacity: 0; }
   .narrow header > div { max-width: none; }
   .narrow #art { width: 64px; height: 64px; border-radius: 12px; }
@@ -52,7 +54,7 @@
   #cover { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 3vh; opacity: 0; transform: scale(.96); transition: opacity .8s, transform .8s; pointer-events: none; }
   .view-cover #cover { opacity: 1; transform: none; }
-  #cover img { height: 52vh; aspect-ratio: 1; border-radius: 28px; object-fit: cover;
+  #cover img { height: 40vh; aspect-ratio: 1; border-radius: 28px; object-fit: cover; margin: 30px 0 132px;   /* room for the bars */
     box-shadow: 0 0 80px color-mix(in srgb, var(--accent) 30%, transparent); }
   #cover .t { font-size: clamp(28px, 3.6vw, 64px); font-weight: 600; text-align: center; padding: 0 5vw; }
   #cover .a { font-size: clamp(16px, 1.6vw, 28px); opacity: .6; margin-top: -1.5vh; }
@@ -129,6 +131,11 @@
   .phone .mbtn { width: 46px; height: 46px; }   /* finger-sized on phones */
   .phone .mbtn.play { width: 56px; height: 56px; }
 
+  /* Time left in the song: small all the way, big and glowing for the last minute */
+  #left { position: fixed; right: 34px; bottom: 26px; z-index: 3; font: 800 76px Montserrat, sans-serif; font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+    color: var(--accent); opacity: 0; transform: scale(.3); transform-origin: 100% 100%; pointer-events: none; transition: opacity .5s, transform .8s, text-shadow .8s; }
+  #left.on { opacity: .75; }
+  #left.on.end { opacity: 1; transform: none; text-shadow: 0 0 34px color-mix(in srgb, var(--accent) 70%, transparent); }
   /* The cursor: a soft glow in the look's color instead of the arrow; fades after 2 s still */
   html, body, * { cursor: none !important; }
   #cursor { position: fixed; left: 0; top: 0; z-index: 10; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
@@ -144,6 +151,7 @@
 <div id="cover"><img alt=""><div class="t"></div><div class="a"></div></div>
 <div id="status"></div>
 <div id="toast"></div>
+<div id="left"></div>
 <div id="notch"><div class="in">
   <div class="row" id="media">
     <div class="mbtn vol" data-m="vol-" title="Volume down"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM16 11h5v2h-5z"/></svg></div>
@@ -159,6 +167,26 @@
 </div></div>
 <div id="cursor"></div>
 <script>
+// =====================================================================================================================
+// HOW THIS PAGE WORKS
+//
+// This page is the whole screen of the app. Python (lyric_constellation/window.py) shows it full screen and offers
+// functions the page can call as `api.state()`, `api.track()`, `api.seek(42)`... (see "talking to app.py" below).
+//
+//  1. Polling:  4 times a second the page asks api.state() for the song position, play/pause, which look, the mood
+//               and the beat. When the song changes it also asks api.track() for the title, cover and timed words.
+//  2. The clock: between polls, songTime() keeps counting on its own, so words move smoothly at any refresh rate.
+//  3. Drawing:  frame() runs once per screen refresh. It works out effects shared by every look (mouse, beat pulse,
+//               clicks), then calls the current look's frame(T), which draws the words onto one big <canvas>.
+//  4. Looks:    each file in ui/looks/ adds one look to LOOKS with LOOKS.push({ id, name, build, frame, ... }).
+//               build() lays a lyric line out once; frame(T) draws it every frame. Songs take turns, in the order
+//               of the <script> lines at the bottom of this file.
+//  5. The notch: the black pill at the top. Hover it to pick a look, color, mood, screens, seek and volume.
+//
+// Sections below, in order: shared helpers · smooth timing · glow sprites · the mouse · the look manager
+// (countdown, cover bars, frame) · talking to app.py · the notch · keys (at the bottom, with the start-up code).
+// =====================================================================================================================
+
 // ---------- shared by every look ----------
 const LOOKS = [];      // each ui/looks/*.js file adds one entry; the app shows one look per song, in order
 const WIN = +new URLSearchParams(location.search).get('win') || 0;   // 0 = main window, others = further monitors
@@ -238,20 +266,21 @@ function glowAt(x, y, r, color, a) {
   if (a <= 0.004) return;
   ctx.globalAlpha = a; ctx.drawImage(glowSprite(color, r), x - r, y - r, 2 * r, 2 * r);
 }
-// Glowing text: a word's blurred halo, rendered once at 64 px and scaled to any size, then pasted under the crisp text.
+// Glowing text: a word's blurred halo, rendered once at 96 px and scaled to any size, then pasted under the crisp text.
+// blur is in units of a 64 px font, so it looks the same whatever B is.
 const halos = new Map();
 function drawHalo(s, font, px, color, blur, x, y, align, baseline, a) {   // font: px => CSS font string
   if (a <= 0.004 || !s) return;
-  const B = 64, sc = px / B, k = s + '|' + font(B) + '|' + color + '|' + blur;
+  const B = 96, sc = px / B, k = s + '|' + font(B) + '|' + color + '|' + blur;
   let c = halos.get(k);
   if (!c) {
-    if (halos.size > 200) halos.clear();
+    if (halos.size > 120) halos.clear();
     const g0 = document.createElement('canvas').getContext('2d');
     g0.font = font(B); const m = g0.measureText(s);
-    const pad = Math.ceil(blur * 2), asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent;
+    const soft = blur * B / 64, pad = Math.ceil(soft * 2), asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent;
     c = document.createElement('canvas'); c.width = Math.ceil(m.width) + pad * 2; c.height = Math.ceil(asc + desc) + pad * 2;
     const g = c.getContext('2d');
-    g.font = font(B); g.textBaseline = 'alphabetic'; g.fillStyle = g.shadowColor = color; g.shadowBlur = blur;
+    g.font = font(B); g.textBaseline = 'alphabetic'; g.fillStyle = g.shadowColor = color; g.shadowBlur = soft;
     g.fillText(s, pad, pad + asc);
     Object.assign(c, { pad, asc, desc, tw: m.width });
     halos.set(k, c);
@@ -473,13 +502,16 @@ function noiseTile(size, light, alpha) {
   return c;
 }
 
-// Full-screen layers that never change (gradients, vignettes) are drawn once per screen size and reused:
+// Full-screen layers that never change (gradients, vignettes) are drawn once per screen size, at its real pixels, and reused:
 // a big gradient fill costs ~9 ms a frame, pasting the cached image almost nothing.
 const layers = new Map();
 function layer(key, draw) {
-  const k = `${key}@${W}x${H}`;
+  const d = DPR(), k = `${key}@${W}x${H}@${d}`;
   let c = layers.get(k);
-  if (!c) { c = document.createElement('canvas'); c.width = W; c.height = H; draw(c.getContext('2d')); layers.set(k, c); }
+  if (!c) {
+    c = document.createElement('canvas'); c.width = Math.round(W * d); c.height = Math.round(H * d);
+    const g = c.getContext('2d'); g.scale(d, d); draw(g); layers.set(k, c);
+  }
   return c;
 }
 
@@ -564,10 +596,11 @@ function setLook(i) {
   return lk;
 }
 // Mix: looks take turns every 5-10 s, each switch at the start of a line, never one of the last two looks again.
+// Motion has the most to show, so it comes back after most other turns and stays longer: about half of a song.
 // Planned from the song's lines and a number that changes every song, so both screens agree, a seek lands on the
 // same look, and the next play of the song gets a different order. `sub` picks the variant inside a look.
 let songSalt = 0, mixSeg = null;
-const CALM_LOOKS = ['constellation', 'ink', 'space'];
+const CALM_LOOKS = ['constellation', 'ink', 'space', 'motion'];
 const mixing = () => lockNow < 0 && LOOKS.length > 1 && !isPhone();
 function mixPlan() {
   const P = track.phrases;
@@ -575,14 +608,17 @@ function mixPlan() {
   const r = rng(hash(track.title + ':mix:' + songSalt)), plan = [];
   const calmPool = LOOKS.map((l, i) => CALM_LOOKS.includes(l.id) ? i : -1).filter(i => i >= 0);
   const pool = calmMode && calmPool.length ? calmPool : [...LOOKS.keys()], n = pool.length;   // calm: the quiet looks only
+  const motion = LOOKS.findIndex(l => l.id === 'motion');
   const starts = P.length ? P.map(p => p.t0 - LEAD) : Array.from({ length: 200 }, (_, i) => i * 8);   // no lyrics: every 8 s
   let next = -Infinity;
   for (const t of starts) {
     if (t < next) continue;
     const recent = plan.slice(-Math.min(2, n - 1)).map(s => s.look), used = i => plan.filter(s => s.look === i).length;
-    const free = pool.filter(i => !recent.includes(i)), least = Math.min(...free.map(used));
-    plan.push({ t, look: pickR(r, free.filter(i => used(i) <= least + 1)), sub: Math.floor(r() * 1e6) });   // the least shown go first
-    next = t + (calmMode ? 12 + r() * 8 : 5 + r() * 5);
+    const free = pool.filter(i => i !== motion && !recent.includes(i)), least = Math.min(...free.map(used));
+    const heavy = plan.length && plan[plan.length - 1].look !== motion && r() < 0.8;
+    const look = heavy ? motion : pickR(r, free.filter(i => used(i) <= least + 1));   // the least shown go first
+    plan.push({ t, look, sub: Math.floor(r() * 1e6) });
+    next = t + (calmMode ? 12 + r() * 8 : look === motion ? 8 + r() * 6 : 5 + r() * 5);
   }
   Object.assign(mixPlan, { P, salt: songSalt, calm: calmMode, plan });
   return plan;
@@ -597,12 +633,88 @@ function setAccent(c) {
   if (c && c !== setAccent.last) document.documentElement.style.setProperty('--accent', setAccent.last = c);
 }
 
+// The countdown: time left, once a second. Hidden when nobody knows how long the song is.
+let leftShown = null;
+function stepLeft() {
+  const d = lastState.dur, el = $('#left'), on = !!d && !!track.title && (view === 'both' || view === 'stars');
+  if (on !== el.classList.contains('on')) el.classList.toggle('on', on);
+  if (!on) { leftShown = null; return; }
+  const rem = Math.max(0, Math.ceil(d - (songTime() - offset)));
+  if (rem === leftShown) return;
+  leftShown = rem;
+  el.textContent = `${String(Math.floor(rem / 60)).padStart(2, '0')}:${String(rem % 60).padStart(2, '0')}`;
+  el.classList.toggle('end', rem <= 60);
+  if (rem <= 60 && clock.playing && el.animate) el.animate([{ scale: 1.07 }, { scale: 1 }], { duration: 280, easing: 'ease-out' });
+}
+
+// The bars around the cover: on the cover screen around the big cover, on a single screen around the small one at the
+// top left. They follow 24 bands of what the speakers play (audio.Levels): bass in the middle of each side, treble
+// toward the corners. Levels come every 50 ms, in pairs every 0.1 s, so they're played back one at a time.
+const BARS = 24, barGot = [], barWant = new Float32Array(BARS), barShown = new Float32Array(BARS);
+let barN = -1, barAt = 0, barBusy = false, barRects = null, barRectsAt = -9;
+function barsWanted() { return !!(api && api.levels) && (view === 'cover' || view === 'both') && !!track.art; }
+setInterval(() => {
+  if (barBusy || !barsWanted() || !clock.playing) return;
+  barBusy = true;
+  api.levels().then(l => {
+    if (l && l.n !== barN) { barN = l.n; barGot.push(...l.bands); barGot.splice(0, barGot.length - 4); }
+  }).catch(() => {}).finally(() => { barBusy = false; });
+}, 50);
+function barRect(el) {
+  const r = el.getBoundingClientRect();
+  return r.width > 8 && getComputedStyle(el).display !== 'none' ? { x: r.left, y: r.top, w: r.width, h: r.height, rad: parseFloat(getComputedStyle(el).borderRadius) || 0 } : null;
+}
+function stepBars() {
+  if (barGot.length && now() - barAt >= 0.045) { barWant.set(barGot.shift()); barAt = now(); }
+  if (!clock.playing) barWant.fill(0);
+  for (let i = 0; i < BARS; i++) {   // up fast, down slowly, like a meter
+    const w = barWant[i], v = barShown[i];
+    barShown[i] = v + (w - v) * ease(w > v ? 0.55 : 0.13);
+  }
+  if (!barsWanted()) return;
+  if (now() - barRectsAt > 0.4) {   // where the covers are; cheap to ask, but not every frame
+    barRectsAt = now();
+    const hd = $('header');
+    barRects = { cover: view === 'cover' ? barRect($('#cover img')) : null,
+                 art: view === 'both' && !hd.classList.contains('hidden') ? barRect($('#art')) : null,
+                 artA: +getComputedStyle(hd).opacity, narrow: document.documentElement.classList.contains('narrow') };
+  }
+  const calm = 1 - 0.4 * calmFx;
+  if (barRects.cover) drawBars(barRects.cover, { gap: 13, w: 4.5, len: 110 * calm, pad: 14, a: 1 - sceneFade });
+  if (barRects.art) drawBars(barRects.art, { gap: 7, w: 2.5, len: (barRects.narrow ? 15 : 30) * calm, pad: 7, a: barRects.artA });
+}
+function drawBars(r, o) {
+  if (o.a < 0.02) return;
+  const lvl = u => {   // u: 0..1 along a side -> that spot's level (bass at the middle)
+    const f = Math.abs(u - 0.5) * 2 * (BARS - 1), i = Math.min(BARS - 2, Math.floor(f));
+    return barShown[i] + (barShown[i + 1] - barShown[i]) * (f - i);
+  };
+  ctx.save(); ctx.setTransform(DPR(), 0, 0, DPR(), 0, 0);
+  ctx.beginPath();
+  const side = (x0, y0, dx, dy, nx, ny, len) => {   // one side: starting corner, its direction, the outward normal
+    const inner = len - 2 * r.rad, n = Math.max(2, Math.floor(inner / o.gap));
+    for (let k = 0; k <= n; k++) {
+      const u = k / n, at = r.rad + u * inner, x = x0 + dx * at + nx * o.pad, y = y0 + dy * at + ny * o.pad, l = 1.5 + o.len * lvl(u);
+      ctx.moveTo(x, y); ctx.lineTo(x + nx * l, y + ny * l);
+    }
+  };
+  side(r.x, r.y, 1, 0, 0, -1, r.w);              // top
+  side(r.x, r.y + r.h, 1, 0, 0, 1, r.w);         // bottom
+  side(r.x, r.y, 0, 1, -1, 0, r.h);              // left
+  side(r.x + r.w, r.y, 0, 1, 1, 0, r.h);         // right
+  ctx.strokeStyle = setAccent.last || '#fff';   // plain blending and square glow ends: round caps and 'lighter' cost 5x more
+  ctx.globalAlpha = 0.22 * o.a; ctx.lineWidth = o.w * 3; ctx.lineCap = 'butt'; ctx.stroke();    // the glow
+  ctx.globalAlpha = 0.9 * o.a; ctx.lineWidth = o.w; ctx.lineCap = 'round'; ctx.stroke();        // the bar
+  ctx.restore();
+}
+
 let lastTs = 0;
 function frame(ts) {
   requestAnimationFrame(frame);   // first: an error while drawing costs one frame, not the whole animation
   dt = lastTs ? clamp((ts - lastTs) / 1000, 0, 0.05) : 1 / 60; lastTs = ts;
   stepCalm();   // before the Mix plan: it picks the pool
   stepBeat();
+  stepLeft();
   lastHits = wordHits; wordHits = [];
   const lk = setLook(mixing() ? mixLook() : lookWant);   // also switches to/from Constellation when the window crosses phone width
   stepMouse(); stepNotch(lk);                                  // these keep real speed; the looks below get slowed dt
@@ -649,6 +761,7 @@ function frame(ts) {
     }
     if (bursts.length) { ctx.save(); drawBursts(); ctx.restore(); }
   }
+  stepBars();
   const fade = 0.8 + calmFx;   // calm: slower crossfades
   if (now() - ghostAt < fade) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -724,7 +837,8 @@ const SWATCH = { constellation: 'radial-gradient(circle at 60% 40%, #E8D44D 0 22
                  pop: 'conic-gradient(#CC1A4A 0 33%, #3FF0C3 0 66%, #EECB5B 0)',
                  ink: 'linear-gradient(135deg, #EEEBE3 50%, #1A1916 50%)',
                  space: 'radial-gradient(circle at 70% 30%, #F7A6C9 0 18%, #2A0E78 22%, #3A0A5A)',
-                 splash: 'conic-gradient(#2BFFC0 0 40%, #E8096E 0 70%, #3D0A91 0)' };
+                 splash: 'conic-gradient(#2BFFC0 0 40%, #E8096E 0 70%, #3D0A91 0)',
+                 motion: 'radial-gradient(circle, #fff 0 22%, #24245c 46%, #05051a)' };
 let lockNow = -1, colorNow = -1, pickedAt = -9, mediaAt = -9, lastState = {};
 function buildNotch() {
   $('#looks').innerHTML = '<div class="chip plain" data-i="-1">Mix</div>' + LOOKS.map((l, i) =>
@@ -803,7 +917,7 @@ function measureNotch() {   // the open panel's size: measured only when its con
   document.documentElement.style.setProperty('--open-w', notch.openW + 'px');   // the notch and the header both use it
   notch.openH = Math.ceil($('#notch .in').offsetHeight);
   // under ~160px left for the title beside the open notch: put the header below it instead
-  document.documentElement.classList.toggle('narrow', (innerWidth - notch.openW) / 2 - 172 < 160);
+  document.documentElement.classList.toggle('narrow', (innerWidth - notch.openW) / 2 - 200 < 160);
 }
 addEventListener('resize', measureNotch);
 function stepNotch(lk) {
@@ -867,6 +981,7 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('on'), 1200);
 }
 
+// ---------- keys (the table in README.md lists them) ----------
 addEventListener('keydown', e => {
   if (e.key === 'F12' || e.key === 'F11' || (e.key === 'Escape' && fs)) {
     e.preventDefault(); fs = !fs; api.fullscreen(WIN); return;
@@ -892,7 +1007,9 @@ addEventListener('keydown', e => {
 <script src="looks/ink.js"></script>
 <script src="looks/space.js"></script>
 <script src="looks/splash.js"></script>
+<script src="looks/motion.js"></script>
 <script>
+// ---------- start-up: runs once, after every look file above has added itself to LOOKS ----------
 resize();
 buildNotch();
 buildSeek();
@@ -934,7 +1051,7 @@ addEventListener('pointerdown', e => {   // a click below the notch sends a shoc
 // Start drawing once the fonts are in, so the first layouts are measured with the real lettering.
 Promise.race([
   Promise.all(['900 40px Archivo', 'italic 900 40px Archivo', '40px "League Gothic"', '40px "Alfa Slab One"',
-               '700 40px "Josefin Sans"', '100 40px "Josefin Sans"', '700 40px Caveat', '40px "Permanent Marker"'].map(f => document.fonts.load(f))),
+               '700 40px "Josefin Sans"', '100 40px "Josefin Sans"', '700 40px Caveat', '40px "Permanent Marker"', '900 40px Montserrat', '200 40px Montserrat'].map(f => document.fonts.load(f))),
   new Promise(r => setTimeout(r, 3000)),
 ]).then(() => requestAnimationFrame(frame));
 </script>
