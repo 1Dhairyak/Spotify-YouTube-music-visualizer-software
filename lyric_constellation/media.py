@@ -9,6 +9,8 @@ Shazam what song it is.
 
 The main loop is watch(): 4 times a second it asks Windows what's playing. When the song changes it starts
 load_track() for the new song; otherwise it just keeps the clock in step with the player's position.
+
+Sections below: 1. Player (the shared state) · 2. the main loop · 3. a new song · 4. asking Windows and Shazam.
 """
 import asyncio
 import base64
@@ -30,96 +32,7 @@ NO_LYRICS = "No synced lyrics found for this song"
 LISTENING = "Listening to identify the song…"
 
 
-async def lookup(fn, *args):
-    """Run a slow network function (like fetch_lyrics) in the background, so the loop keeps running meanwhile.
-    Offline or not found -> None."""
-    try:
-        return await asyncio.to_thread(fn, *args)
-    except (OSError, ValueError, KeyError):
-        return None
-
-
-# ---------- what Windows is playing ----------
-
-async def read_session(session):
-    """One media player ("session") -> a dict of what it's playing:
-    app name, title, artist, playing or not, position and length in seconds, thumbnail, and whether it can seek."""
-    props = await session.try_get_media_properties_async()
-    timeline = session.get_timeline_properties()
-    info = session.get_playback_info()
-    playing = info.playback_status == PLAYING
-
-    duration = timeline.end_time.total_seconds()
-    position = None
-    if duration > 0:   # some browsers report no timeline at all
-        position = timeline.position.total_seconds()
-        if playing:
-            # The player only updates its position every few seconds. Add the time since its last update.
-            position += (datetime.now(timezone.utc) - timeline.last_updated_time).total_seconds()
-        position = min(position, duration)
-
-    return {"app": session.source_app_user_model_id or "",
-            "title": props.title,
-            "artist": props.artist,
-            "playing": playing,
-            "pos": position,
-            "dur": duration or None,
-            "thumb": props.thumbnail,
-            "session": session,
-            "can_seek": info.controls.is_playback_position_enabled}
-
-
-async def read_thumb(ref):
-    """The player's small cover picture -> a "data:" URL the page can show directly (or None)."""
-    if not ref:
-        return None
-    from winrt.windows.storage.streams import Buffer, InputStreamOptions
-
-    stream = await ref.open_read_async()
-    buf = Buffer(stream.size)
-    await stream.read_async(buf, buf.capacity, InputStreamOptions.READ_AHEAD)
-    image_type = stream.content_type or "image/png"
-    return f"data:{image_type};base64," + base64.b64encode(bytes(buf)).decode()
-
-
-async def recognize():
-    """Record ~6 s of what the speakers play and ask Shazam what it is.
-    Returns (artist, title, cover url, position in the song) or None."""
-    import ctypes
-    import numpy as np
-    import soundcard as sc
-    from shazamio import Shazam
-
-    rate = 44100
-
-    def grab():
-        ctypes.windll.ole32.CoInitializeEx(None, 0)   # Windows' sound system needs this once per thread
-        mic = sc.get_microphone(str(sc.default_speaker().name), include_loopback=True)
-        return mic.record(samplerate=rate, numframes=rate * 6)
-
-    started = time.monotonic()
-    data = await asyncio.to_thread(grab)
-    if abs(data).max() < 0.005:   # silence: don't bother Shazam
-        return None
-
-    # Shazam wants a WAV file, so we pack the sound into one in memory (mono, 16-bit).
-    out = io.BytesIO()
-    with wave.open(out, "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(rate)
-        mono = np.clip(data.mean(axis=1), -1, 1)
-        w.writeframes((mono * 32767).astype("<i2").tobytes())
-
-    async with Shazam() as shazam:   # "async with" closes its connection afterwards
-        result = await shazam.recognize(out.getvalue())
-    track = result.get("track")
-    if not track:
-        return None
-    # Shazam says where in the song our clip started; add the time that passed since we started recording.
-    position = result["matches"][0].get("offset", 0) + time.monotonic() - started
-    return track.get("subtitle", ""), track["title"], track.get("images", {}).get("coverart"), position
-
+# ---------- 1. Player: the current song and its clock (everything else writes here; the page reads it) ----------
 
 class Player:
     """The current song and where we are in it. The watcher below writes it; the page reads it 4 times a second.
@@ -197,6 +110,84 @@ class Player:
         self.track = {**self.track, "words": words}
         self.rev += 1
 
+
+# ---------- 2. the main loop: watch what Windows is playing ----------
+
+def run_watch(player):
+    """Run watch() until the app closes. If it crashes, say so on screen (details in the log)."""
+    try:
+        asyncio.run(watch(player))
+    except Exception:
+        log.exception("media watcher")
+        player.status = "Media watcher crashed, see the console"
+
+
+async def watch(player):
+    """The main loop: 4 times a second, see what Windows is playing and keep `player` up to date. Runs forever."""
+    from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as Manager
+
+    manager = await Manager.request_async()
+    key = None        # (app, title, artist) of the song on screen, or ("sound", artist, title) if Shazam found it
+    loader = None     # the load_track task for the current song
+    listener = None   # the from_sound task, while we're identifying by listening
+    player.loop = asyncio.get_running_loop()
+
+    while True:
+        await asyncio.sleep(0.25)
+        try:
+            infos = [await read_session(s) for s in manager.get_sessions()]
+        except OSError:   # a player closed while we were reading it
+            continue
+
+        # Follow the player that is playing; if none is, the first one.
+        cur = next((i for i in infos if i["playing"]), infos[0] if infos else None)
+        player.timed = bool(cur and cur["pos"] is not None)
+        if cur:
+            player.session, player.dur, player.can_seek = cur["session"], cur["dur"], cur["can_seek"]
+        else:
+            player.session, player.dur, player.can_seek = None, None, False
+
+        if not cur or not (cur["title"] or cur["playing"]):
+            # No player reports anything (e.g. Chrome with media-key handling off): identify by sound instead.
+            if key and key[0] != "sound":   # a player's song was on screen: clear it
+                key = None
+                if loader:
+                    loader.cancel()
+                player.track_id += 1
+                player.publish("", "", None, [], IDLE)
+                player.set_clock(0, False)
+            if listener and listener.done():
+                key = listener.result()
+                listener = None
+            # ponytail: listens again every 20 s to catch song changes and pauses; a pause shows up to 20 s late
+            if not listener and time.monotonic() - player.last_heard >= 20:
+                listener = asyncio.create_task(from_sound(player, key))
+            continue
+
+        # A player reports a song: stop listening for one.
+        if listener:
+            listener.cancel()
+            listener = None
+
+        new_key = (cur["app"], cur["title"], cur["artist"])
+        if new_key != key:
+            # A new song: start loading it (and stop loading the old one, if it was still going).
+            key = new_key
+            if loader:
+                loader.cancel()
+            player.track_id += 1
+            player.set_clock(cur["pos"] or 0, cur["playing"])
+            loader = asyncio.create_task(load_track(player, cur))
+        elif time.monotonic() < player.seeking_until:
+            pass   # we just jumped: the player hasn't caught up yet, so don't trust its position
+        elif cur["pos"] is not None:
+            player.set_clock(cur["pos"], cur["playing"])   # same song: follow the player's position
+        else:
+            # This player gives no position: keep counting from the song's start (or Shazam's position).
+            player.set_clock(player.now(), cur["playing"])
+
+
+# ---------- 3. a new song: find its lyrics, cover and position ----------
 
 async def load_track(player, cur):
     """A new song started: show its title at once, then find its lyrics and a sharp cover, and if Windows
@@ -285,75 +276,92 @@ async def from_sound(player, key):
     return new_key
 
 
-async def watch(player):
-    """The main loop: 4 times a second, see what Windows is playing and keep `player` up to date. Runs forever."""
-    from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as Manager
+# ---------- 4. asking Windows and Shazam ----------
 
-    manager = await Manager.request_async()
-    key = None        # (app, title, artist) of the song on screen, or ("sound", artist, title) if Shazam found it
-    loader = None     # the load_track task for the current song
-    listener = None   # the from_sound task, while we're identifying by listening
-    player.loop = asyncio.get_running_loop()
+async def read_session(session):
+    """One media player ("session") -> a dict of what it's playing:
+    app name, title, artist, playing or not, position and length in seconds, thumbnail, and whether it can seek."""
+    props = await session.try_get_media_properties_async()
+    timeline = session.get_timeline_properties()
+    info = session.get_playback_info()
+    playing = info.playback_status == PLAYING
 
-    while True:
-        await asyncio.sleep(0.25)
-        try:
-            infos = [await read_session(s) for s in manager.get_sessions()]
-        except OSError:   # a player closed while we were reading it
-            continue
+    duration = timeline.end_time.total_seconds()
+    position = None
+    if duration > 0:   # some browsers report no timeline at all
+        position = timeline.position.total_seconds()
+        if playing:
+            # The player only updates its position every few seconds. Add the time since its last update.
+            position += (datetime.now(timezone.utc) - timeline.last_updated_time).total_seconds()
+        position = min(position, duration)
 
-        # Follow the player that is playing; if none is, the first one.
-        cur = next((i for i in infos if i["playing"]), infos[0] if infos else None)
-        player.timed = bool(cur and cur["pos"] is not None)
-        if cur:
-            player.session, player.dur, player.can_seek = cur["session"], cur["dur"], cur["can_seek"]
-        else:
-            player.session, player.dur, player.can_seek = None, None, False
-
-        if not cur or not (cur["title"] or cur["playing"]):
-            # No player reports anything (e.g. Chrome with media-key handling off): identify by sound instead.
-            if key and key[0] != "sound":   # a player's song was on screen: clear it
-                key = None
-                if loader:
-                    loader.cancel()
-                player.track_id += 1
-                player.publish("", "", None, [], IDLE)
-                player.set_clock(0, False)
-            if listener and listener.done():
-                key = listener.result()
-                listener = None
-            # ponytail: listens again every 20 s to catch song changes and pauses; a pause shows up to 20 s late
-            if not listener and time.monotonic() - player.last_heard >= 20:
-                listener = asyncio.create_task(from_sound(player, key))
-            continue
-
-        # A player reports a song: stop listening for one.
-        if listener:
-            listener.cancel()
-            listener = None
-
-        new_key = (cur["app"], cur["title"], cur["artist"])
-        if new_key != key:
-            # A new song: start loading it (and stop loading the old one, if it was still going).
-            key = new_key
-            if loader:
-                loader.cancel()
-            player.track_id += 1
-            player.set_clock(cur["pos"] or 0, cur["playing"])
-            loader = asyncio.create_task(load_track(player, cur))
-        elif time.monotonic() < player.seeking_until:
-            pass   # we just jumped: the player hasn't caught up yet, so don't trust its position
-        elif cur["pos"] is not None:
-            player.set_clock(cur["pos"], cur["playing"])   # same song: follow the player's position
-        else:
-            # This player gives no position: keep counting from the song's start (or Shazam's position).
-            player.set_clock(player.now(), cur["playing"])
+    return {"app": session.source_app_user_model_id or "",
+            "title": props.title,
+            "artist": props.artist,
+            "playing": playing,
+            "pos": position,
+            "dur": duration or None,
+            "thumb": props.thumbnail,
+            "session": session,
+            "can_seek": info.controls.is_playback_position_enabled}
 
 
-def run_watch(player):
-    """Run watch() until the app closes. If it crashes, say so on screen (details in the log)."""
+async def read_thumb(ref):
+    """The player's small cover picture -> a "data:" URL the page can show directly (or None)."""
+    if not ref:
+        return None
+    from winrt.windows.storage.streams import Buffer, InputStreamOptions
+
+    stream = await ref.open_read_async()
+    buf = Buffer(stream.size)
+    await stream.read_async(buf, buf.capacity, InputStreamOptions.READ_AHEAD)
+    image_type = stream.content_type or "image/png"
+    return f"data:{image_type};base64," + base64.b64encode(bytes(buf)).decode()
+
+
+async def recognize():
+    """Record ~6 s of what the speakers play and ask Shazam what it is.
+    Returns (artist, title, cover url, position in the song) or None."""
+    import ctypes
+    import numpy as np
+    import soundcard as sc
+    from shazamio import Shazam
+
+    rate = 44100
+
+    def grab():
+        ctypes.windll.ole32.CoInitializeEx(None, 0)   # Windows' sound system needs this once per thread
+        mic = sc.get_microphone(str(sc.default_speaker().name), include_loopback=True)
+        return mic.record(samplerate=rate, numframes=rate * 6)
+
+    started = time.monotonic()
+    data = await asyncio.to_thread(grab)
+    if abs(data).max() < 0.005:   # silence: don't bother Shazam
+        return None
+
+    # Shazam wants a WAV file, so we pack the sound into one in memory (mono, 16-bit).
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        mono = np.clip(data.mean(axis=1), -1, 1)
+        w.writeframes((mono * 32767).astype("<i2").tobytes())
+
+    async with Shazam() as shazam:   # "async with" closes its connection afterwards
+        result = await shazam.recognize(out.getvalue())
+    track = result.get("track")
+    if not track:
+        return None
+    # Shazam says where in the song our clip started; add the time that passed since we started recording.
+    position = result["matches"][0].get("offset", 0) + time.monotonic() - started
+    return track.get("subtitle", ""), track["title"], track.get("images", {}).get("coverart"), position
+
+
+async def lookup(fn, *args):
+    """Run a slow network function (like fetch_lyrics) in the background, so the loop keeps running meanwhile.
+    Offline or not found -> None."""
     try:
-        asyncio.run(watch(player))
-    except Exception:
-        log.exception("media watcher")
-        player.status = "Media watcher crashed, see the console"
+        return await asyncio.to_thread(fn, *args)
+    except (OSError, ValueError, KeyError):
+        return None

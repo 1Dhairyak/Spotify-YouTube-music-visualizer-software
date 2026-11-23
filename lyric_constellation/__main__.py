@@ -1,4 +1,7 @@
-"""The starting point of the app. `python app.py` runs main() at the bottom of this file.
+"""The starting point of the app. `python app.py` runs main(), the first function below.
+
+Every file in this folder starts with a comment like this one saying what it does, and its code below follows the
+same order, so you can read each file from the top.
 
 How to run it:
   python app.py             live: follows Spotify / YouTube / YouTube Music through Windows' media controls
@@ -37,21 +40,44 @@ from .window import show
 log = logging.getLogger("lyric_constellation")
 
 
-def songs():
-    """The song list in songs.txt (one "Artist - Title" per line; lines starting with # are notes)."""
-    lines = (ROOT / "songs.txt").read_text("utf-8").splitlines()
-    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+# ---------- 1. main(): picks what to run ----------
+
+def main():
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    if arg == "--version":
+        print(__version__)
+        return
+
+    setup_logging()
+    migrate_old_data()
+    log.info("Lyric Constellation %s, data in %s", __version__, DATA)
+
+    if arg == "--probe":
+        asyncio.run(probe())
+    elif arg == "--preload":
+        preload()
+    elif arg == "--demo":
+        player = Player()
+        start = float(sys.argv[2]) if len(sys.argv) > 2 else 0
+        demo(player, start)
+        show(player, None)   # demo: nothing to watch, the pretend clock just runs
+    else:
+        player = Player()
+        # show() opens the window and then runs listen_and_watch in the background
+        show(player, lambda: listen_and_watch(player))
 
 
-def preload():
-    """--preload: download the lyrics of every song in songs.txt, so they work offline later."""
-    for line in songs():
-        artist, title = clean(line, "", browser=True)
-        data = fetch_lyrics(artist, title)
-        if data:
-            print(f"ok      {artist} - {title}")
-        else:
-            print(f"MISSING {artist} - {title}")
+# ---------- 2. the modes: live, demo, preload, probe ----------
+
+def listen_and_watch(player):
+    """Live mode: start everything that listens to the speakers, then watch what Windows is playing (runs forever)."""
+    speakers = Speakers()
+    Learner(player).start(speakers)                     # word timing, every ~30 s of singing
+    MoodListener(player).start(speakers)                # calm or lively, every 2 s
+    speakers.listen(1, BeatListener(player).hear)       # the beat, every 1 s
+    speakers.listen(0.1, Levels(player).hear)           # the bars around the cover, every 0.1 s
+    threading.Thread(target=speakers.run, daemon=True).start()   # records on its own thread
+    run_watch(player)
 
 
 def demo(player, start):
@@ -72,6 +98,23 @@ def demo(player, start):
     player.set_clock(start, True)
 
 
+def preload():
+    """--preload: download the lyrics of every song in songs.txt, so they work offline later."""
+    for line in songs():
+        artist, title = clean(line, "", browser=True)
+        data = fetch_lyrics(artist, title)
+        if data:
+            print(f"ok      {artist} - {title}")
+        else:
+            print(f"MISSING {artist} - {title}")
+
+
+def songs():
+    """The song list in songs.txt (one "Artist - Title" per line; lines starting with # are notes)."""
+    lines = (ROOT / "songs.txt").read_text("utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+
+
 async def probe():
     """--probe: print every media player Windows knows about, once a second. Useful when a player isn't picked up."""
     from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as Manager
@@ -89,6 +132,8 @@ async def probe():
         print("-" * 72)
         await asyncio.sleep(1)
 
+
+# ---------- 3. set-up ----------
 
 def setup_logging():
     """Write the log to %APPDATA%\\LyricConstellation\\lyric-constellation.log, and to the console when there is one.
@@ -119,41 +164,6 @@ def setup_logging():
     warnings.filterwarnings("ignore", message="data discontinuity in recording")
 
 
-def listen_and_watch(player):
-    """Live mode: start everything that listens to the speakers, then watch what Windows is playing (runs forever)."""
-    speakers = Speakers()
-    Learner(player).start(speakers)                     # word timing, every ~30 s of singing
-    MoodListener(player).start(speakers)                # calm or lively, every 2 s
-    speakers.listen(1, BeatListener(player).hear)       # the beat, every 1 s
-    speakers.listen(0.1, Levels(player).hear)           # the bars around the cover, every 0.1 s
-    threading.Thread(target=speakers.run, daemon=True).start()   # records on its own thread
-    run_watch(player)
-
-
-def main():
-    arg = sys.argv[1] if len(sys.argv) > 1 else ""
-    if arg == "--version":
-        print(__version__)
-        return
-
-    setup_logging()
-    migrate_old_data()
-    log.info("Lyric Constellation %s, data in %s", __version__, DATA)
-
-    if arg == "--probe":
-        asyncio.run(probe())
-    elif arg == "--preload":
-        preload()
-    elif arg == "--demo":
-        player = Player()
-        start = float(sys.argv[2]) if len(sys.argv) > 2 else 0
-        demo(player, start)
-        show(player, None)   # demo: nothing to watch, the pretend clock just runs
-    else:
-        player = Player()
-        # show() opens the window and then runs listen_and_watch in the background
-        show(player, lambda: listen_and_watch(player))
-
-
+# `python -m lyric_constellation` starts here. This must stay last: main() needs every function above to exist.
 if __name__ == "__main__":
     main()
