@@ -70,8 +70,10 @@ Read them roughly in this order. Every file starts with a comment saying what it
 | `lyric_constellation/__init__.py` | Version, folders, JSON helpers | ~55 |
 | `ui/index.html` | The screen: polling Python, the clock, the mouse, the notch, keys | ~1,060 |
 | `ui/looks/*.js` | The 7 looks, one file each | 250–670 each |
-| `tests/` | 40 automatic tests (run `pytest`) | |
+| `tests/` | 41 automatic tests (run `pytest`) | |
 | `tools/train_mood.py` | Trains the mood model (developer tool, not part of the app) | |
+| `tools/sync_report.py` | Measures how far the first word-time guess was from what Whisper heard | ~40 |
+| `.github/workflows/` | `ci.yml` tests every push; `release.yml` builds and publishes a release on a version tag | |
 | `hotkey.pyw` | Optional: Ctrl+Alt+Z opens/closes the app from anywhere | |
 
 ## Where things are saved
@@ -111,7 +113,8 @@ whenever the player reports a new position (for example after you skip ahead).
 First a guess: words are spread across the line by their length. Then, while the song plays, Whisper listens to the
 speakers and writes down which word it hears when. Those words are matched to the lyrics with `difflib` (runs of 2+
 words in order, so a lone "the" can't match anywhere), and the times are saved. A chorus later in the song borrows
-the times heard for its twin line.
+the times heard for its twin line. `tools/sync_report.py` measures the difference: across 32 songs (4,152 words) the
+guess was off by a median of 205 ms (mean 302 ms), which you can see on screen; listening removes that gap.
 
 **How does it know a song is emotional?**
 Two small logistic-regression models trained on 264 songs I labelled: one on the lyrics (which words, how densely
@@ -124,15 +127,35 @@ Timing. The player's position lags, Whisper's words need matching to messy lyric
 what you hear (the `LAG` setting in `beat.py`). Second: songs from browsers, where titles look like
 "Artist - Song (Official Video) | HD" and some browsers report no position at all, hence the Shazam fallback.
 
+**How do you ship a new version?**
+Push a version tag (`git push --tags`). GitHub Actions builds the .exe folder with PyInstaller on a clean Windows
+machine, zips it and publishes the release, so every download is built the same way.
+
 **What would you do next?**
 An installer with a Start-menu shortcut, code signing (so Windows SmartScreen doesn't warn), and letting users
 correct the mood so the model can improve.
+
+## For your resume
+
+Paste-ready bullets, every number measured in this repo:
+
+- Built a Windows app that turns any music player (Spotify, YouTube Music, YouTube) into full-screen, word-synced
+  animated lyrics, reading the song from the OS media API (no logins or API keys); 7 HTML-canvas animation styles at
+  up to 180 Hz.
+- Used offline Whisper speech recognition and difflib sequence alignment to learn when each word is really sung,
+  correcting a median 205 ms timing error across 4,152 words in 32 songs.
+- Trained a logistic-regression mood classifier on 264 labelled songs, joining lyric features with FFT audio features
+  (brightness, drums, beat regularity): 93% cross-validated, 84% on 51 unseen songs.
+- Shipped with 41 pytest tests, ruff linting, GitHub Actions CI, and a one-tag PyInstaller release pipeline.
+
+**Skills:** Python, JavaScript, HTML canvas, numpy (FFT, signal processing), speech recognition (faster-whisper),
+machine learning (logistic regression), Windows APIs (winrt), pytest, GitHub Actions, PyInstaller.
 
 ## Checking it works
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest          # 40 tests: lyrics parsing, word timing, title cleanup, cache, mood, listening, screens
+pytest          # 41 tests: lyrics parsing, word timing, title cleanup, cache, mood, listening, screens
 ruff check .    # code style and mistakes
 python app.py --demo 15   # the app with a sample song, no music player needed
 ```

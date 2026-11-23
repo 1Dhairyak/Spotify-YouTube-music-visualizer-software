@@ -1,0 +1,26 @@
+# Push a version tag (git tag v1.0.1 && git push --tags) and this builds the Windows download and publishes the release.
+# Asset names must stay exactly as they are: the README download buttons link to them.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # needed to create the release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt pyinstaller==6.22.3
+      - run: python -m PyInstaller LyricConstellation.spec
+      - run: Compress-Archive dist/LyricConstellation LyricConstellation-Windows.zip
+      # the Android app isn't rebuilt here: carry the APK over from the latest release so its button keeps working
+      - run: gh release download --pattern LyricConstellation-Android.apk
+      - run: gh release create ${{ github.ref_name }} LyricConstellation-Windows.zip LyricConstellation-Android.apk --generate-notes

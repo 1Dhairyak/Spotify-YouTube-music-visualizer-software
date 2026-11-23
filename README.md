@@ -4,7 +4,7 @@
 Every word lights up the moment it's sung, in one of 7 animated styles. No login, no API keys: it reads the song
 from Windows itself.
 
-![Lyric Constellation showing the Pink Poster look](docs/screenshot.jpg)
+![Lyric Constellation switching between the Pink Poster, Pop Colors and Ink Sketch looks](docs/demo.gif)
 
 <p>
   <a href="https://github.com/1Dhairyak/Spotify-YouTube-music-visualizer-software/releases/latest/download/LyricConstellation-Windows.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Download-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" height="40"></a>
@@ -36,7 +36,8 @@ the Constellation look; the Windows app has all 7.
 - **Synced lyrics** from [LRCLIB](https://lrclib.net), cached so each song is downloaded once.
 - **Learns word timing by listening.** Lyrics sites only time each *line*. While an English song plays, Whisper
   (speech recognition, runs offline on the CPU) hears which word is sung when and saves it, so replays follow the
-  singing word for word.
+  singing word for word. Across 32 songs (4,152 words) the first guess was off by a median of 205 ms; listening
+  fixes that (measure it yourself: `python tools/sync_report.py`).
 - **Knows an emotional song when it hears one.** A small model I trained on 264 labelled songs reads the lyrics
   (English and romanized Hindi/Punjabi) and listens to the music (brightness, drums, beat, swells). Ballads get a
   calm mode: muted colors, slower motion. 93% accurate in cross-validation.
@@ -121,14 +122,16 @@ about each player), `--version`. Settings, the lyrics cache and the log are in `
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest          # 40 tests: lyrics, word timing, title cleanup, cache, mood, listening, screens
+pytest          # 41 tests: lyrics, word timing, title cleanup, cache, mood, listening, screens
 ruff check .
 ```
 
 GitHub Actions runs both on every push.
 
-- **Build the Windows download:** `python -m PyInstaller LyricConstellation.spec`, then zip `dist/LyricConstellation`
-  as `LyricConstellation-Windows.zip`.
+- **Release:** bump `__version__` in `lyric_constellation/__init__.py`, then `git tag v1.0.1` and `git push --tags`.
+  GitHub Actions builds the Windows zip and publishes the release (`.github/workflows/release.yml`).
+- **Build the Windows download by hand:** `python -m PyInstaller LyricConstellation.spec`, then zip
+  `dist/LyricConstellation` as `LyricConstellation-Windows.zip`.
 - **Retrain the mood model:** `python tools/train_mood.py fetch`, then `python tools/train_mood.py train`
   (prints its accuracy and writes `lyric_constellation/mood_model.json`).
 - **Add or drop a look:** each look is one file in `ui/looks/` plus one `<script>` line in `ui/index.html`.
