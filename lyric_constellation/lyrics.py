@@ -6,11 +6,12 @@ time it is sung:
     [00:16.10] The legends and the myths
 Some LRC files also time each word, like  <00:12.50> I've <00:12.90> been  ("enhanced LRC").
 
-The main steps, in the order the app uses them:
-  clean()          tidy the title the music player reports ("Song (Official Video)" -> "Song")
-  fetch_lyrics()   get the LRC text, from the cache folder or from LRCLIB
-  words_for()      turn it into a list of words, each with the second it is sung
-  cover_url()      find large album art on iTunes
+The main steps, in the order the app uses them (each is a numbered section below, in this order):
+  1. clean()          tidy the title the music player reports ("Song (Official Video)" -> "Song")
+  2. fetch_lyrics()   get the LRC text, from the cache folder or from LRCLIB
+  3. words_for()      turn it into a list of words, each with the second it is sung
+  4. match_heard()    line up the words Whisper heard with the lyrics (learner.py uses it)
+  5. cover_url()      find large album art on iTunes
 """
 import difflib
 import json
@@ -26,10 +27,149 @@ CACHE = DATA / "cache"   # one JSON file per song, so a song's lyrics are downlo
 UA = {"User-Agent": f"LyricConstellation/{__version__} (https://github.com/1Dhairyak/Spotify-YouTube-music-visualizer-software)"}
 WORD_PACE = 0.07   # seconds per "weight unit" of a word (its length + 2): how fast we assume a line is sung
 
-# ---------- reading the LRC format ----------
+
+# ---------- 1. clean(): tidy the title the player reports ----------
+
+# "(Official Video)", "[Lyrics]", "(HD)" ... : never part of the song's name
+JUNK = re.compile(r"[(\[][^)\]]*\b(official|lyrics?|video|audio|visuali[sz]er|hd|4k|mv|remaster(ed)?)\b[^)\]]*[)\]]", re.I)
+# "Song - Acoustic", "Song - Live": the part after " - " names a version, not the artist
+VERSION = re.compile(r"\b(acoustic|live|remix|remaster(ed)?|version|edit|mix|unplugged|lo-?fi|slowed|reverb|"
+                     r"sped up|instrumental|reprise|cover)\b", re.I)
+# "feat. Someone", "(ft. Someone)"
+FEAT = re.compile(r"\s*[(\[]?\s*\b(ft|feat|featuring)\b\.?[^)\]]*[)\]]?", re.I)
+
+
+def clean(title, artist, browser=False):
+    """The title and artist a player reports -> (artist, title) clean enough to look up lyrics.
+    `browser`: it came from a web browser (YouTube), where the video title is usually "Artist - Song"."""
+    title = (title or "").replace("–", "-").replace("—", "-")   # all kinds of dashes -> "-"
+    title = JUNK.sub("", title).split("|")[0]
+    artist = re.sub(r"\s*-\s*Topic$|VEVO$", "", artist or "").strip()   # YouTube channel names: "Artist - Topic"
+
+    if " - " in title:
+        left, right = title.split(" - ", 1)
+        if browser and not VERSION.search(right):
+            artist, title = left, right          # "Artist - Song"
+        else:
+            title = left                         # "Jhol - Acoustic", "Song - Remastered 2011", "Song - Live"
+
+    # Only the first artist: "A, B & C" -> "A"
+    artist = re.split(r",|&|;| x | feat\.? | ft\.? ", FEAT.sub("", artist), maxsplit=1, flags=re.I)[0]
+    return artist.strip(), FEAT.sub("", title).strip(" -")
+
+
+def cache_key(artist, title):
+    """Artist + title -> a simple file name: lowercase letters, digits and spaces only."""
+    return re.sub(r"[\W_]+", " ", f"{artist} {title}".lower()).strip()
+
+
+# ---------- 2. fetch_lyrics(): from the cache folder or LRCLIB ----------
+
+def fetch_lyrics(artist, title, duration=None):
+    """Time-stamped lyrics, from the cache or LRCLIB -> {"artist", "title", "lrc", "duration", "learned"?, "file"}.
+    Returns None if no synced lyrics exist.
+
+    `duration` (seconds) helps pick the right version. A cached copy whose length is off by more than 3 s
+    (a music video with an intro, an extended mix) is looked up again."""
+    f = CACHE / f"{cache_key(artist, title)}.json"
+    cached = read_json(f)
+    if cached:
+        cached["file"] = str(f)   # Learner saves what it hears into this file
+        cached_length = cached.get("duration") or 0
+        wrong_version = duration and abs(cached_length - duration) > 3
+        if not wrong_version:
+            return cached
+
+    query = {"artist_name": artist, "track_name": title}
+    if duration:
+        query["duration"] = round(duration)
+    try:
+        # First try an exact match...
+        try:
+            hit = http_json("https://lrclib.net/api/get?" + urllib.parse.urlencode(query))
+        except urllib.error.HTTPError as e:
+            if e.code != 404:   # 404 just means "not found"; any other error is a real problem
+                raise
+            hit = None
+        # ...then a search, taking the result whose length is closest to the song's.
+        if not (hit and hit.get("syncedLyrics")):
+            found = http_json("https://lrclib.net/api/search?" + urllib.parse.urlencode({"q": f"{artist} {title}"}))
+            found = [r for r in found if r.get("syncedLyrics")]
+            if duration:
+                found.sort(key=lambda r: abs((r.get("duration") or 0) - duration))
+            hit = found[0] if found else None
+    except OSError:   # offline: a copy of another version still beats no lyrics at all
+        return cached
+
+    if not hit:
+        return cached
+    data = {"artist": hit["artistName"], "title": hit["trackName"], "lrc": hit["syncedLyrics"], "duration": hit.get("duration")}
+    write_json(f, data)
+    return {**data, "file": str(f)}
+
+
+def http_json(url):
+    """Download a URL and read it as JSON (waits at most 10 seconds)."""
+    request = urllib.request.Request(url, headers=UA)
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.load(response)
+
+
+# ---------- 3. words_for(): when each word is sung ----------
 
 LINE_TAG = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")              # [mm:ss.xx] at the start of a line
 WORD_TAG = re.compile(r"<(\d+):(\d+(?:\.\d+)?)>\s*([^<]*)")      # <mm:ss.xx> word  (enhanced LRC only)
+
+
+def words_for(lyrics):
+    """Lyrics from fetch_lyrics -> the word list for the screen, using the times Learner heard where it has them.
+
+    Line starts always stay as LRCLIB has them. A line that is sung again (a chorus) borrows the word times
+    heard for its twin, measured from the line's start. Words that were not heard keep the spacing of the
+    guess, stretched to fit between the nearest words that were heard."""
+    lines = parse_lrc(lyrics["lrc"])
+    words = word_times(lines)
+    learned = lyrics.get("learned")   # {"word index": seconds}, saved by Learner
+    if not learned or WORD_TAG.search(lyrics["lrc"]):
+        return words
+
+    spans = list(zip(line_spans(lines), (body.lower() for _, body in lines)))
+
+    # 1. For every line text, collect the heard offsets (seconds after the line starts) of its words.
+    twin = {}   # line text -> {word number in line: seconds after the line starts}
+    for (start, _, first, count), text in spans:
+        for k in range(1, count):
+            if str(first + k) in learned:
+                twin.setdefault(text, {})[k] = learned[str(first + k)] - start
+
+    # 2. Re-time each line: its own heard words first, then what its twins heard.
+    for (start, next_start, first, count), text in spans:
+        got = {k: start + offset for k, offset in twin.get(text, {}).items()}
+        got.update({k: learned[str(first + k)] for k in range(1, count) if str(first + k) in learned})
+        if not got:
+            continue
+
+        guess = [words[first + k]["t"] for k in range(count)]
+        anchors = sorted({0: start, **got}.items())   # (word number, time) for every word we know for sure
+        for k in range(1, count):
+            if k in got:
+                new = got[k]
+            else:
+                # Not heard: place it between the nearest known words before (a) and after (b),
+                # keeping the guess's spacing, stretched to fit.
+                a = max(x for x in anchors if x[0] < k)
+                b = next((x for x in anchors if x[0] > k), None)
+                if b:
+                    guess_gap = (guess[b[0]] - guess[a[0]]) or 1
+                    stretch = (b[1] - a[1]) / guess_gap
+                else:
+                    stretch = 1
+                new = a[1] + (guess[k] - guess[a[0]]) * stretch
+            # Never before the previous word, never after the next line starts.
+            earliest = words[first + k - 1]["t"] + 0.05
+            latest = next_start - 0.05
+            words[first + k]["t"] = round(min(max(new, earliest), latest), 3)
+    return words
 
 
 def parse_lrc(text):
@@ -90,56 +230,7 @@ def line_spans(lines):
     return out
 
 
-def words_for(lyrics):
-    """Lyrics from fetch_lyrics -> the word list for the screen, using the times Learner heard where it has them.
-
-    Line starts always stay as LRCLIB has them. A line that is sung again (a chorus) borrows the word times
-    heard for its twin, measured from the line's start. Words that were not heard keep the spacing of the
-    guess, stretched to fit between the nearest words that were heard."""
-    lines = parse_lrc(lyrics["lrc"])
-    words = word_times(lines)
-    learned = lyrics.get("learned")   # {"word index": seconds}, saved by Learner
-    if not learned or WORD_TAG.search(lyrics["lrc"]):
-        return words
-
-    spans = list(zip(line_spans(lines), (body.lower() for _, body in lines)))
-
-    # 1. For every line text, collect the heard offsets (seconds after the line starts) of its words.
-    twin = {}   # line text -> {word number in line: seconds after the line starts}
-    for (start, _, first, count), text in spans:
-        for k in range(1, count):
-            if str(first + k) in learned:
-                twin.setdefault(text, {})[k] = learned[str(first + k)] - start
-
-    # 2. Re-time each line: its own heard words first, then what its twins heard.
-    for (start, next_start, first, count), text in spans:
-        got = {k: start + offset for k, offset in twin.get(text, {}).items()}
-        got.update({k: learned[str(first + k)] for k in range(1, count) if str(first + k) in learned})
-        if not got:
-            continue
-
-        guess = [words[first + k]["t"] for k in range(count)]
-        anchors = sorted({0: start, **got}.items())   # (word number, time) for every word we know for sure
-        for k in range(1, count):
-            if k in got:
-                new = got[k]
-            else:
-                # Not heard: place it between the nearest known words before (a) and after (b),
-                # keeping the guess's spacing, stretched to fit.
-                a = max(x for x in anchors if x[0] < k)
-                b = next((x for x in anchors if x[0] > k), None)
-                if b:
-                    guess_gap = (guess[b[0]] - guess[a[0]]) or 1
-                    stretch = (b[1] - a[1]) / guess_gap
-                else:
-                    stretch = 1
-                new = a[1] + (guess[k] - guess[a[0]]) * stretch
-            # Never before the previous word, never after the next line starts.
-            earliest = words[first + k - 1]["t"] + 0.05
-            latest = next_start - 0.05
-            words[first + k]["t"] = round(min(max(new, earliest), latest), 3)
-    return words
-
+# ---------- 4. match_heard(): line up what Whisper heard with the lyrics (learner.py uses it) ----------
 
 def match_heard(lines, heard, start, end):
     """Whisper's words [(song seconds, word)] heard between start and end -> {word index: seconds}
@@ -173,91 +264,14 @@ def match_heard(lines, heard, start, end):
     return out
 
 
-# ---------- cleaning up titles ----------
+# ---------- 5. cover_url(): large album art from iTunes ----------
 
-# "(Official Video)", "[Lyrics]", "(HD)" ... : never part of the song's name
-JUNK = re.compile(r"[(\[][^)\]]*\b(official|lyrics?|video|audio|visuali[sz]er|hd|4k|mv|remaster(ed)?)\b[^)\]]*[)\]]", re.I)
-# "Song - Acoustic", "Song - Live": the part after " - " names a version, not the artist
-VERSION = re.compile(r"\b(acoustic|live|remix|remaster(ed)?|version|edit|mix|unplugged|lo-?fi|slowed|reverb|"
-                     r"sped up|instrumental|reprise|cover)\b", re.I)
-# "feat. Someone", "(ft. Someone)"
-FEAT = re.compile(r"\s*[(\[]?\s*\b(ft|feat|featuring)\b\.?[^)\]]*[)\]]?", re.I)
-
-
-def clean(title, artist, browser=False):
-    """The title and artist a player reports -> (artist, title) clean enough to look up lyrics.
-    `browser`: it came from a web browser (YouTube), where the video title is usually "Artist - Song"."""
-    title = (title or "").replace("–", "-").replace("—", "-")   # all kinds of dashes -> "-"
-    title = JUNK.sub("", title).split("|")[0]
-    artist = re.sub(r"\s*-\s*Topic$|VEVO$", "", artist or "").strip()   # YouTube channel names: "Artist - Topic"
-
-    if " - " in title:
-        left, right = title.split(" - ", 1)
-        if browser and not VERSION.search(right):
-            artist, title = left, right          # "Artist - Song"
-        else:
-            title = left                         # "Jhol - Acoustic", "Song - Remastered 2011", "Song - Live"
-
-    # Only the first artist: "A, B & C" -> "A"
-    artist = re.split(r",|&|;| x | feat\.? | ft\.? ", FEAT.sub("", artist), maxsplit=1, flags=re.I)[0]
-    return artist.strip(), FEAT.sub("", title).strip(" -")
-
-
-def cache_key(artist, title):
-    """Artist + title -> a simple file name: lowercase letters, digits and spaces only."""
-    return re.sub(r"[\W_]+", " ", f"{artist} {title}".lower()).strip()
-
-
-# ---------- downloading ----------
-
-def http_json(url):
-    """Download a URL and read it as JSON (waits at most 10 seconds)."""
-    request = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(request, timeout=10) as response:
-        return json.load(response)
-
-
-def fetch_lyrics(artist, title, duration=None):
-    """Time-stamped lyrics, from the cache or LRCLIB -> {"artist", "title", "lrc", "duration", "learned"?, "file"}.
-    Returns None if no synced lyrics exist.
-
-    `duration` (seconds) helps pick the right version. A cached copy whose length is off by more than 3 s
-    (a music video with an intro, an extended mix) is looked up again."""
-    f = CACHE / f"{cache_key(artist, title)}.json"
-    cached = read_json(f)
-    if cached:
-        cached["file"] = str(f)   # Learner saves what it hears into this file
-        cached_length = cached.get("duration") or 0
-        wrong_version = duration and abs(cached_length - duration) > 3
-        if not wrong_version:
-            return cached
-
-    query = {"artist_name": artist, "track_name": title}
-    if duration:
-        query["duration"] = round(duration)
-    try:
-        # First try an exact match...
-        try:
-            hit = http_json("https://lrclib.net/api/get?" + urllib.parse.urlencode(query))
-        except urllib.error.HTTPError as e:
-            if e.code != 404:   # 404 just means "not found"; any other error is a real problem
-                raise
-            hit = None
-        # ...then a search, taking the result whose length is closest to the song's.
-        if not (hit and hit.get("syncedLyrics")):
-            found = http_json("https://lrclib.net/api/search?" + urllib.parse.urlencode({"q": f"{artist} {title}"}))
-            found = [r for r in found if r.get("syncedLyrics")]
-            if duration:
-                found.sort(key=lambda r: abs((r.get("duration") or 0) - duration))
-            hit = found[0] if found else None
-    except OSError:   # offline: a copy of another version still beats no lyrics at all
-        return cached
-
+def cover_url(artist, title):
+    """Large (1200 px) album art from iTunes. Players only give Windows a small blurry thumbnail."""
+    hit = itunes_song(artist, title)
     if not hit:
-        return cached
-    data = {"artist": hit["artistName"], "title": hit["trackName"], "lrc": hit["syncedLyrics"], "duration": hit.get("duration")}
-    write_json(f, data)
-    return {**data, "file": str(f)}
+        return None
+    return hit["artworkUrl100"].replace("100x100", "1200x1200")
 
 
 def itunes_song(artist, title, country="US"):
@@ -271,11 +285,3 @@ def itunes_song(artist, title, country="US"):
         if a and (a in b or b in a):
             return r
     return None
-
-
-def cover_url(artist, title):
-    """Large (1200 px) album art from iTunes. Players only give Windows a small blurry thumbnail."""
-    hit = itunes_song(artist, title)
-    if not hit:
-        return None
-    return hit["artworkUrl100"].replace("100x100", "1200x1200")

@@ -183,11 +183,13 @@
 //               of the <script> lines at the bottom of this file.
 //  5. The notch: the black pill at the top. Hover it to pick a look, color, mood, screens, seek and volume.
 //
-// Sections below, in order: shared helpers · smooth timing · glow sprites · the mouse · the look manager
-// (countdown, cover bars, frame) · talking to app.py · the notch · keys (at the bottom, with the start-up code).
+// Sections below, numbered in their headers (search "---------- 9." to jump to one):
+//   1 shared by every look · 2 smooth timing · 3 glow sprites · 4 the mouse · 5 words (pop, clicks, sparks)
+//   6 the beat · 7 text, textures, layers · 8 phrases · 9 the look manager (countdown, cover bars, frame())
+//   10 talking to app.py · 11 the notch · 12 keys · 13 start-up (after the look files, at the very bottom)
 // =====================================================================================================================
 
-// ---------- shared by every look ----------
+// ---------- 1. shared by every look ----------
 const LOOKS = [];      // each ui/looks/*.js file adds one entry; the app shows one look per song, in order
 const WIN = +new URLSearchParams(location.search).get('win') || 0;   // 0 = main window, others = further monitors
 let view = WIN ? 'cover' : 'both';     // both | stars | cover | gone
@@ -240,12 +242,12 @@ function stepCalm() {
 }
 const stage = () => ({ x: 0, y: TOP, w: W, h: H - TOP, cx: W / 2, cy: TOP + (H - TOP) / 2 });
 
-// ---------- smooth timing: the same motion at 60, 144 or 180 Hz ----------
+// ---------- 2. smooth timing: the same motion at 60, 144 or 180 Hz ----------
 let dt = 1 / 60;   // seconds since the last frame (capped)
 // k60 = how much of the way to its target something moves per frame at 60 fps; scaled to the real frame time
 const ease = k60 => 1 - Math.pow(1 - k60, dt * 60);
 
-// ---------- glow sprites: a soft round glow drawn once and pasted (shadowBlur is a GPU blur pass per draw) ----------
+// ---------- 3. glow sprites: a soft round glow drawn once and pasted (shadowBlur is a GPU blur pass per draw) ----------
 const sprites = new Map();
 function glowSprite(color, r) {
   // a few sizes per color (4 per octave), drawn scaled to the exact radius: flares that grow every frame reuse them
@@ -322,7 +324,7 @@ function drawText(c, x, y, align = 'left', baseline = 'alphabetic') {   // like 
   ctx.drawImage(c, left - pad, base - asc - pad, c.width / d, c.height / d);
 }
 
-// ---------- the mouse: every look reacts to it ----------
+// ---------- 4. the mouse: every look reacts to it ----------
 // x/y: where it is; sx/sy: a smoothed follower (what the scene reacts to, so everything springs instead of snapping);
 // presence: 0..1, fades in while the mouse is over the window and recently moved, out when it leaves or rests.
 const mouse = { x: -1, y: -1, sx: -1, sy: -1, speed: 0, at: 0, presence: 0, px: 0, py: 0, tilt: 0, inside: false };
@@ -385,6 +387,7 @@ function warp(x, y, k = 1) {   // call inside save(), right before drawing somet
 // Backgrounds drawn at a smaller depth move less with the mouse than the lyrics: depth 0 = fixed, 1 = with the text.
 function parallax(depth) { ctx.translate(-mouse.px * (1 - depth), -mouse.py * (1 - depth)); }
 
+// ---------- 5. words: same layout every time, the pop as each is sung, clicks and sparks ----------
 // Seeded randomness, so a phrase gets the same layout every time it's shown (e.g. after seeking back).
 function hash(s) { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
 function rng(seed) {
@@ -441,6 +444,7 @@ function drawBursts() {
   }
   ctx.globalAlpha = 1;
 }
+// ---------- 6. the beat and the camera kick ----------
 // The beat: a soft pulse on what the speakers play (beat.py). beatFx jumps up on each beat and decays until the next.
 // Calm songs barely pulse, and a song with no clear beat doesn't: a pulse off the beat is worse than none.
 let beatIn = null, beatN = -1, beatAt = 0, beatFx = 0;
@@ -469,6 +473,7 @@ function stepKick() {
   kick *= 1 - ease(0.1);
 }
 const caps = s => s.toUpperCase();
+// ---------- 7. text, textures and cached layers ----------
 // The pieces of a text to animate one at a time: letters (an accent stays on its letter), but whole words in scripts
 // whose letters join up (Hindi, Punjabi, Urdu...), where a split would break the writing. Spaces are pieces too.
 const JOINED = /[֐-ࣿऀ-෿יִ-﷿ﹰ-﻿]/, GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
@@ -523,6 +528,7 @@ function art() {
   return artSrc && artImg.complete && artImg.naturalWidth ? artImg : null;
 }
 
+// ---------- 8. phrases: which lyric line is on screen ----------
 // Lyrics -> phrases: one per lyric line, long lines split into balanced chunks of at most 9 words.
 function phrasesOf(ws) {
   const lines = []; let cur = [];
@@ -570,7 +576,7 @@ function direct(lk, T) {
   return { t, cur: st.cur, prev: st.prev };
 }
 
-// ---------- the look manager ----------
+// ---------- 9. the look manager ----------
 let look = -1, lookSaved = null;
 const ghost = document.createElement('canvas');   // last frame of the old look/style, faded out over the new one
 let ghostAt = -9;
@@ -771,7 +777,7 @@ function frame(ts) {
   drawNotch();
 }
 
-// ---------- talking to app.py ----------
+// ---------- 10. talking to app.py ----------
 
 function showTrack(t) {
   const h = $('header');
@@ -831,7 +837,7 @@ async function poll() {
 }
 addEventListener('pywebviewready', () => { api = pywebview.api; poll(); setInterval(poll, 250); });
 
-// ---------- the notch: stay on one look or mix them (see mixPlan), and Constellation's color ----------
+// ---------- 11. the notch: stay on one look or mix them (see mixPlan), and Constellation's color ----------
 const SWATCH = { constellation: 'radial-gradient(circle at 60% 40%, #E8D44D 0 22%, #111 26%)',
                  pulse: 'linear-gradient(135deg, #FF1F8E, #F6C4DA 55%, #2A0F1C)',
                  pop: 'conic-gradient(#CC1A4A 0 33%, #3FF0C3 0 66%, #EECB5B 0)',
@@ -981,7 +987,7 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('on'), 1200);
 }
 
-// ---------- keys (the table in README.md lists them) ----------
+// ---------- 12. keys (the table in README.md lists them) ----------
 addEventListener('keydown', e => {
   if (e.key === 'F12' || e.key === 'F11' || (e.key === 'Escape' && fs)) {
     e.preventDefault(); fs = !fs; api.fullscreen(WIN); return;
@@ -1009,7 +1015,7 @@ addEventListener('keydown', e => {
 <script src="looks/splash.js"></script>
 <script src="looks/motion.js"></script>
 <script>
-// ---------- start-up: runs once, after every look file above has added itself to LOOKS ----------
+// ---------- 13. start-up: runs once, after every look file above has added itself to LOOKS ----------
 resize();
 buildNotch();
 buildSeek();

@@ -54,7 +54,7 @@ flowchart LR
 
 ## File map
 
-Read them roughly in this order. Every file starts with a comment saying what it does.
+Read them in this order. Every file starts with a comment saying what it does.
 
 | File | What it does | Lines |
 |---|---|---|
@@ -75,6 +75,21 @@ Read them roughly in this order. Every file starts with a comment saying what it
 | `tools/sync_report.py` | Measures how far the first word-time guess was from what Whisper heard | ~40 |
 | `.github/workflows/` | `ci.yml` tests every push; `release.yml` builds and publishes a release on a version tag | |
 | `hotkey.pyw` | Optional: Ctrl+Alt+Z opens/closes the app from anywhere | |
+
+## Inside each file
+
+Every file reads from the top: what it does first, then numbered sections in the order things happen.
+To explain a file, go through its sections in order.
+
+| File | Its sections, top to bottom |
+|---|---|
+| `__main__.py` | 1. `main()` picks what to run → 2. the modes (live, demo, preload, probe) → 3. set-up |
+| `media.py` | 1. `Player`, the shared state → 2. `watch()`, the main loop → 3. `load_track()`, a new song → 4. asking Windows and Shazam |
+| `lyrics.py` | 1. `clean()` → 2. `fetch_lyrics()` → 3. `words_for()` → 4. `match_heard()` → 5. `cover_url()` |
+| `window.py` | 1. `show()` opens the window → 2. `Api`, everything the page can call |
+| `audio.py`, `learner.py`, `mood.py`, `beat.py` | The steps listed in the file's opening comment, in that order |
+| `ui/index.html` | 13 numbered sections, listed in the comment at the top of its script |
+| `ui/looks/*.js` | "Look N: name", its drawing code, and at the bottom `LOOKS.push({...})` naming what the page calls: `frame()` every frame, and in most looks `build()` to lay a line out once |
 
 ## Where things are saved
 

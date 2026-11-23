@@ -24,6 +24,39 @@ SETTINGS = DATA / "settings.json"
 PAGE = str(ROOT / "ui" / "index.html")
 
 
+# ---------- 1. show(): open the window and keep it on the right monitors ----------
+
+def show(player, worker):
+    """Open the main window and run until it's closed. `worker` (the media watcher) runs in the background."""
+    import webview
+
+    api = Api(player)
+    api._wins[0] = webview.create_window("Music Sync", PAGE, js_api=api, width=1200, height=760,
+                                         background_color="#000000", fullscreen=True)
+    api._wins[0].events.closed += api._close
+
+    def start():   # pywebview runs this on a background thread once the window is up
+        threading.Thread(target=watch_screens, args=(api,), daemon=True).start()
+        if worker:
+            worker()
+
+    webview.start(start)   # shows the window; returns when it's closed
+    os._exit(0)            # make sure no background thread keeps a hidden process alive
+
+
+def watch_screens(api):
+    """Every 2 seconds, check for monitors being plugged in or out."""
+    # ponytail: polling every 2 s; a Windows display-change hook would react instantly
+    while api._open:
+        try:
+            api._sync_screens()
+        except Exception:
+            log.exception("screens")
+        time.sleep(2)
+
+
+# ---------- 2. Api: everything the page can call ----------
+
 class Api:
     """Everything the page can ask Python for. Window 0 is the main window: it stays on the monitor it opened on,
     and is hidden while that monitor is switched off."""
@@ -251,32 +284,3 @@ class Api:
             for n, w in list(self._wins.items()):
                 if n:
                     w.destroy()
-
-
-def watch_screens(api):
-    """Every 2 seconds, check for monitors being plugged in or out."""
-    # ponytail: polling every 2 s; a Windows display-change hook would react instantly
-    while api._open:
-        try:
-            api._sync_screens()
-        except Exception:
-            log.exception("screens")
-        time.sleep(2)
-
-
-def show(player, worker):
-    """Open the main window and run until it's closed. `worker` (the media watcher) runs in the background."""
-    import webview
-
-    api = Api(player)
-    api._wins[0] = webview.create_window("Music Sync", PAGE, js_api=api, width=1200, height=760,
-                                         background_color="#000000", fullscreen=True)
-    api._wins[0].events.closed += api._close
-
-    def start():   # pywebview runs this on a background thread once the window is up
-        threading.Thread(target=watch_screens, args=(api,), daemon=True).start()
-        if worker:
-            worker()
-
-    webview.start(start)   # shows the window; returns when it's closed
-    os._exit(0)            # make sure no background thread keeps a hidden process alive
